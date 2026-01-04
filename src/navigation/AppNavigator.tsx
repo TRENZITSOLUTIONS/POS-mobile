@@ -14,6 +14,13 @@ import SetupFailureScreen from '../screens/FailureScreen';
 import ModeSelectionScreen from '../screens/ModeSelectionScreen';
 import JoinBusinessScreen from '../screens/JoinBusinessScreen';
 
+// Dashboard Screens
+import DashboardScreen from '../screens/DashboardScreen';
+import DownloadingSummaryScreen from '../screens/DownloadingSummaryScreen';
+import BillSummaryScreen from '../screens/BillSummaryScreen';
+import SaveSuccessScreen from '../screens/SaveSuccessScreen';
+import SelectSummaryDateScreen from '../screens/SelectSummaryDateScreen';
+
 // Billing screens
 import BillingScreen from '../screens/BillingScreen';
 import CheckoutScreen from '../screens/CheckoutScreen';
@@ -36,6 +43,18 @@ import GSTSettingsScreen from '../screens/GSTSettingsScreen';
 import PrinterSetupScreen from '../screens/PrinterSetupScreen';
 import TestPrintPreviewScreen from '../screens/TestPrintPreviewScreen';
 import AddPeopleScreen from '../screens/AddPeopleScreen';
+import BackupDataScreen from '../screens/BackupDataScreen';
+import BackupDetailsScreen from '../screens/BackupDetailsScreen';
+import BackupCompleteScreen from '../screens/BackupCompleteScreen';
+import BackingUpScreen from '../screens/BackingUpScreen';
+import ExportBillsScreen from '../screens/ExportBillsScreen';
+import ExportSuccessScreen from '../screens/ExportSuccessScreen';
+import BillPreviewScreen from '../screens/BillPreviewScreen';
+import BillScannerScreen from '../screens/BillScannerScreen';
+import ExportingBillsScreen from '../screens/ExportingBillsScreen';
+import RestoreDataScreen from '../screens/RestoreDataScreen';
+import RestoringDataScreen from '../screens/RestoringDataScreen';
+import RestoreSuccessScreen from '../screens/RestoreSuccessScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -110,6 +129,33 @@ const AppNavigator: React.FC = () => {
         name="BillSuccess"
         component={BillSuccessScreen}
         options={{ animation: 'fade', gestureEnabled: false }}
+      />
+
+      {/* Dashboard screens */}
+      <Stack.Screen 
+        name="Dashboard" 
+        component={DashboardScreen}
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="SelectSummaryDate" 
+        component={SelectSummaryDateScreen}
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="DownloadingSummary" 
+        component={DownloadingSummaryScreen}
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="BillSummary" 
+        component={BillSummaryScreen}
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="SaveSuccess" 
+        component={SaveSuccessScreen}
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
       />
 
       {/* Admin screens */}
@@ -192,6 +238,66 @@ const AppNavigator: React.FC = () => {
         name="AddPeople" 
         component={AddPeopleScreen}
         options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="BackupData" 
+        component={BackupDataScreen} 
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="BackupDetails" 
+        component={BackupDetailsScreen} 
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="BackingUp" 
+        component={BackingUpScreen} 
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="BackupComplete" 
+        component={BackupCompleteScreen} 
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="ExportBills" 
+        component={ExportBillsScreen} 
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="BillScanner" 
+        component={BillScannerScreen} 
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="BillPreview" 
+        component={BillPreviewScreen} 
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="ExportingBills" 
+        component={ExportingBillsScreen} 
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="ExportSuccess" 
+        component={ExportSuccessScreen} 
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="RestoreData" 
+        component={RestoreDataScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen 
+        name="RestoringData" 
+        component={RestoringDataScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen 
+        name="RestoreSuccess" 
+        component={RestoreSuccessScreen}
+        options={{ headerShown: false }}
       />
     </Stack.Navigator>
   );

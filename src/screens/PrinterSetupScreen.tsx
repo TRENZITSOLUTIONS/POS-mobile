@@ -78,7 +78,7 @@ const PrinterSetupScreen: React.FC<PrinterSetupScreenProps> = ({ navigation }) =
   };
 
   const handleTestPrint = () => {
-    console.log('Test print initiated');
+    navigation.navigate('TestPrintPreview')
   };
 
   const handleApplyPaperSize = () => {

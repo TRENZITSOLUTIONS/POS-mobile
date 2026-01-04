@@ -9,6 +9,7 @@ import {
   Image,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import BillingIcon from '../assets/icons/BillingIcon.svg';
 import { RootStackParamList } from '../types/business.types';
 
 type ModeSelectionScreenProps = {
@@ -37,7 +38,7 @@ const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
   };
 
   const handleDashboardMode = () => {
-    console.log('Dashboard Mode - Coming soon');
+    navigation.navigate('Dashboard');
   };
 
   return (
@@ -55,10 +56,7 @@ const ModeSelectionScreen: React.FC<ModeSelectionScreenProps> = ({
           activeOpacity={0.9}
         >
           <View style={styles.imageContainer}>
-            {/* Placeholder for billing image */}
-            <View style={styles.imagePlaceholder}>
-              <Text style={styles.placeholderIcon}>🧾</Text>
-            </View>
+            <BillingIcon width={317} height={192} />
           </View>
 
           <View style={styles.largeCardContent}>

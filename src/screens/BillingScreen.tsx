@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../types/business.types';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 type BillingScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Billing'>;
@@ -36,7 +37,20 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
   const [selectedMealTime, setSelectedMealTime] = useState('Morning');
   const [selectedCategory, setSelectedCategory] = useState('All Items');
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([
+    {id: '1', name: 'Masala Dosa', price: 80, category: 'Rice & Dosa'},
+    {id: '2', name: 'Idli Sambar', price: 50, category: 'Rice & Dosa'},
+    {id: '3', name: 'Plain Dosa', price: 60, category: 'Rice & Dosa'},
+    {id: '4', name: 'Vada', price: 40, category: 'Rice & Dosa'},
+    {id: '5', name: 'Chapati', price: 25, category: 'Chapati & Curry'},
+    {id: '6', name: 'Roti with Dal', price: 70, category: 'Chapati & Curry'},
+    {id: '7', name: 'Paneer Butter Masala', price: 150, category: 'Chapati & Curry'},
+    {id: '8', name: 'Tea', price: 20, category: 'All Items'},
+    {id: '9', name: 'Coffee', price: 30, category: 'All Items'},
+    {id: '10', name: 'Samosa', price: 15, category: 'All Items'},
+    {id: '11', name: 'Poha', price: 40, category: 'All Items'},
+    {id: '12', name: 'Upma', price: 45, category: 'All Items'},
+  ]);
 
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const headerTranslateY = useRef(new Animated.Value(-20)).current;
@@ -217,7 +231,7 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
               transform: [{translateX: filtersTranslateX}],
             },
           ]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.filtersInner}>
             {MEAL_TIMES.map(time => (
               <TouchableOpacity
                 key={time}
@@ -235,7 +249,7 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
                 </Text>
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </View>
         </Animated.View>
 
         {/* Popular Items Section */}
@@ -248,13 +262,46 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
             },
           ]}>
           <Text style={styles.sectionTitle}>Popular Items</Text>
-          <View style={styles.itemsGrid}>
-            {/* Items will be mapped here from state/API */}
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>No items available</Text>
-              <Text style={styles.emptySubtext}>Add items to your menu</Text>
-            </View>
-          </View>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.popularItemsScroll}>
+            {menuItems.slice(0, 5).map(item => {
+              const quantity = getItemQuantity(item.id);
+              return (
+                <TouchableOpacity 
+                  key={item.id} 
+                  style={styles.popularItemCard}
+                  onPress={() => quantity === 0 && addToCart(item)}
+                  activeOpacity={quantity > 0 ? 1 : 0.7}>
+                  <View style={styles.itemImageContainer}>
+                    <Icon name="restaurant-outline" size={40} color="#C62828" />
+                  </View>
+                  <Text style={styles.popularItemName}>{item.name}</Text>
+                  <Text style={styles.popularItemPrice}>₹{item.price}</Text>
+                  {quantity === 0 ? (
+                    <View style={styles.addButtonSmall}>
+                      <Text style={styles.addButtonSmallText}>Add</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.quantityControlSmall}>
+                      <TouchableOpacity
+                        style={styles.quantityButtonSmall}
+                        onPress={() => removeFromCart(item.id)}>
+                        <Text style={styles.quantityButtonTextSmall}>-</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.quantityTextSmall}>{quantity}</Text>
+                      <TouchableOpacity
+                        style={styles.quantityButtonSmall}
+                        onPress={() => addToCart(item)}>
+                        <Text style={styles.quantityButtonTextSmall}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </Animated.View>
 
         {/* Category Filters */}
@@ -290,8 +337,50 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
             styles.allItemsContainer,
             {opacity: contentOpacity},
           ]}>
-          <View style={styles.itemsGrid}>
-            {/* Items will be mapped here from state/API */}
+          <Text style={styles.sectionTitle}>All Items</Text>
+          <View style={styles.allItemsGrid}>
+            {menuItems
+              .filter(item => 
+                selectedCategory === 'All Items' || item.category === selectedCategory
+              )
+              .filter(item => 
+                item.name.toLowerCase().includes(searchQuery.toLowerCase())
+              )
+              .map(item => {
+                const quantity = getItemQuantity(item.id);
+                return (
+                  <TouchableOpacity 
+                    key={item.id} 
+                    style={styles.allItemCard}
+                    onPress={() => quantity === 0 && addToCart(item)}
+                    activeOpacity={quantity > 0 ? 1 : 0.7}>
+                    <View style={styles.itemImageContainer}>
+                      <Icon name="restaurant-outline" size={40} color="#C62828" />
+                    </View>
+                    <Text style={styles.allItemName}>{item.name}</Text>
+                    <Text style={styles.allItemPrice}>₹{item.price}</Text>
+                    {quantity === 0 ? (
+                      <View style={styles.addButtonSmall}>
+                        <Text style={styles.addButtonSmallText}>Add</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.quantityControlSmall}>
+                        <TouchableOpacity
+                          style={styles.quantityButtonSmall}
+                          onPress={() => removeFromCart(item.id)}>
+                          <Text style={styles.quantityButtonTextSmall}>-</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.quantityTextSmall}>{quantity}</Text>
+                        <TouchableOpacity
+                          style={styles.quantityButtonSmall}
+                          onPress={() => addToCart(item)}>
+                          <Text style={styles.quantityButtonTextSmall}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
           </View>
         </Animated.View>
       </ScrollView>
@@ -318,8 +407,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   header: {
-    paddingTop: 50,
-    paddingHorizontal: 16,
+    paddingTop: 48,
+    paddingHorizontal: 20,
     paddingBottom: 16,
     backgroundColor: '#FFFFFF',
   },
@@ -330,45 +419,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#C62828',
     fontWeight: '600',
+    letterSpacing: -0.31,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '700',
     color: '#333333',
+    letterSpacing: 0.38,
   },
   content: {
     flex: 1,
   },
   searchContainer: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     marginBottom: 16,
   },
   searchInput: {
     height: 48,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16.4,
     paddingHorizontal: 16,
     fontSize: 16,
     color: '#333333',
+    borderWidth: 1.8,
+    borderColor: '#E0E0E0',
   },
   filtersContainer: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     marginBottom: 24,
   },
+  filtersInner: {
+    flexDirection: 'row',
+    backgroundColor: '#F2F2F2',
+    borderRadius: 10,
+    padding: 4,
+    gap: 4,
+  },
   filterButton: {
-    paddingHorizontal: 20,
+    flex: 1,
     paddingVertical: 10,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 20,
-    marginRight: 12,
+    backgroundColor: 'transparent',
+    borderRadius: 6.8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterButtonActive: {
     backgroundColor: '#C62828',
   },
   filterText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    color: '#666666',
+    color: '#333333',
+    textAlign: 'center',
+    letterSpacing: -0.31,
   },
   filterTextActive: {
     color: '#FFFFFF',
@@ -378,13 +481,47 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     color: '#333333',
     marginBottom: 16,
+    letterSpacing: -0.26,
   },
-  itemsGrid: {
-    gap: 16,
+  popularItemsScroll: {
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  popularItemCard: {
+    width: 160,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 0.6,
+    borderColor: '#E0E0E0',
+    padding: 12.6,
+    paddingBottom: 0.6,
+  },
+  itemImageContainer: {
+    width: '100%',
+    height: 112,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 6.8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  popularItemName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 4,
+    letterSpacing: -0.44,
+  },
+  popularItemPrice: {
+    fontSize: 16,
+    fontWeight: '400',
+    color: '#C62828',
+    letterSpacing: -0.31,
+    marginBottom: 12,
   },
   emptyState: {
     paddingVertical: 60,
@@ -405,19 +542,24 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   categoryButton: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 20,
-    marginRight: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    marginRight: 8,
+    borderWidth: 0.6,
+    borderColor: '#E0E0E0',
   },
   categoryButtonActive: {
     backgroundColor: '#C62828',
+    borderColor: '#C62828',
   },
   categoryText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    color: '#666666',
+    color: '#333333',
+    textAlign: 'center',
+    letterSpacing: -0.31,
   },
   categoryTextActive: {
     color: '#FFFFFF',
@@ -425,6 +567,149 @@ const styles = StyleSheet.create({
   allItemsContainer: {
     paddingHorizontal: 16,
     paddingBottom: 100,
+  },
+  allItemsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  allItemCard: {
+    width: '48%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 0.6,
+    borderColor: '#E0E0E0',
+    padding: 12.6,
+    paddingBottom: 0.6,
+  },
+  allItemName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 4,
+    letterSpacing: -0.44,
+  },
+  allItemPrice: {
+    fontSize: 16,
+    fontWeight: '400',
+    color: '#C62828',
+    letterSpacing: -0.31,
+    marginBottom: 8,
+  },
+  addButtonSmall: {
+    backgroundColor: '#C62828',
+    borderRadius: 6,
+    paddingVertical: 6,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  addButtonSmallText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  quantityControlSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 6,
+    padding: 4,
+    marginTop: 4,
+  },
+  quantityButtonSmall: {
+    width: 24,
+    height: 24,
+    backgroundColor: '#C62828',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quantityButtonTextSmall: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  quantityTextSmall: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+    marginHorizontal: 12,
+    minWidth: 20,
+    textAlign: 'center',
+  },
+  itemCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  itemInfo: {
+    flex: 1,
+  },
+  itemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 4,
+  },
+  itemPrice: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#C62828',
+  },
+  addButton: {
+    backgroundColor: '#C62828',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  addButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  quantityControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    padding: 4,
+  },
+  quantityButton: {
+    width: 32,
+    height: 32,
+    backgroundColor: '#C62828',
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quantityButtonText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  quantityText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+    marginHorizontal: 16,
+    minWidth: 24,
+    textAlign: 'center',
   },
   cartFooter: {
     position: 'absolute',

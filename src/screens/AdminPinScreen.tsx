@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import LockIcon from '../assets/icons/LockIcon.svg';
 import { RootStackParamList } from '../types/business.types';
 
 type AdminPinScreenProps = {
@@ -97,10 +98,7 @@ const AdminPinScreen: React.FC<AdminPinScreenProps> = ({ navigation }) => {
         {/* Lock Icon */}
         <View style={styles.iconContainer}>
           <View style={styles.lockCircle}>
-            <View style={styles.lockBody}>
-              <View style={styles.lockShackle} />
-              <View style={styles.lockKeyhole} />
-            </View>
+            <LockIcon width={40} height={40} />
           </View>
         </View>
 

@@ -56,6 +56,19 @@ export type RootStackParamList = {
   Billing: undefined;
   Checkout: { cart: CartItem[] };
   BillSuccess: BillData;
+
+  // Dashboard flow
+  Dashboard: undefined;
+  SelectSummaryDate: undefined;
+  DownloadingSummary: {
+    dateRange: 'today' | 'yesterday' | 'last7days' | 'custom';
+    customDays?: string;
+  };
+  BillSummary: {
+    dateRange: 'today' | 'yesterday' | 'last7days' | 'custom';
+    customDays?: string;
+  };
+  SaveSuccess: undefined;
   
   // Admin flow
   AdminPin: undefined;
@@ -79,4 +92,28 @@ export type RootStackParamList = {
   AddPeople: undefined;
   BackupData: undefined;
   TestPrintPreview: undefined;
+  BackupDetails: undefined;
+  BackingUp: undefined;
+  BackupComplete: undefined;
+  ExportBills: undefined;
+  BillScanner: undefined;
+  BillPreview: {
+    photoPath: string;
+  };
+  ExportingBills: {
+    exportType: 'all' | 'dateRange' | 'today';
+    customDays?: string;
+    billData?: any;
+  };
+  ExportSuccess: {
+    exportType: string;
+    billData?: any;
+  };
+  RestoreData: undefined;
+  RestoringData: {
+    fileName: string;
+  };
+  RestoreSuccess: {
+    fileName: string;
+  };
 };

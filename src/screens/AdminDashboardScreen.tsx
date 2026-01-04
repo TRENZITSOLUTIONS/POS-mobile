@@ -366,7 +366,7 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
           <TouchableOpacity
             style={styles.cardContent}
             activeOpacity={0.7}
-            onPress={() => console.log('Backup & Data - Coming Soon')}
+            onPress={() => navigation.navigate('BackupData')}
           >
             <View style={[styles.iconContainer, { backgroundColor: '#F3E5F5' }]}>
               <Text style={styles.iconText}>☁️</Text>
