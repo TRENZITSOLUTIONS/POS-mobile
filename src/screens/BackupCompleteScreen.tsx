@@ -8,14 +8,18 @@ import {
   Animated,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RouteProp } from '@react-navigation/native';
 import CheckWhite from '../assets/icons/CheckWhite.svg';
 import { RootStackParamList } from '../types/business.types';
 
 type BackupCompleteScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BackupComplete'>;
+  route: RouteProp<RootStackParamList, 'BackupComplete'>;
 };
 
-const BackupCompleteScreen: React.FC<BackupCompleteScreenProps> = ({ navigation }) => {
+const BackupCompleteScreen: React.FC<BackupCompleteScreenProps> = ({ navigation, route }) => {
+  const { categoriesSynced = 0, itemsSynced = 0, billsSynced = 0 } = route.params || {};
+  
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const checkmarkAnim = useRef(new Animated.Value(0)).current;
@@ -46,6 +50,34 @@ const BackupCompleteScreen: React.FC<BackupCompleteScreenProps> = ({ navigation 
 
   const handleTap = () => {
     navigation.navigate('BackupData');
+  };
+
+  const getSyncedMessage = () => {
+    const items = [];
+    
+    if (categoriesSynced > 0) {
+      items.push(`${categoriesSynced} ${categoriesSynced === 1 ? 'category' : 'categories'}`);
+    }
+    if (itemsSynced > 0) {
+      items.push(`${itemsSynced} ${itemsSynced === 1 ? 'item' : 'items'}`);
+    }
+    if (billsSynced > 0) {
+      items.push(`${billsSynced} ${billsSynced === 1 ? 'bill' : 'bills'}`);
+    }
+    
+    if (items.length === 0) {
+      return 'All data is up to date';
+    }
+    
+    if (items.length === 1) {
+      return `Backed up ${items[0]}`;
+    }
+    
+    if (items.length === 2) {
+      return `Backed up ${items[0]} and ${items[1]}`;
+    }
+    
+    return `Backed up ${items[0]}, ${items[1]}, and ${items[2]}`;
   };
 
   return (
@@ -81,7 +113,7 @@ const BackupCompleteScreen: React.FC<BackupCompleteScreenProps> = ({ navigation 
 
           {/* Success Messages */}
           <View style={styles.messagesContainer}>
-            <Text style={styles.successMessage}>Backup completed successfully</Text>
+            <Text style={styles.successMessage}>{getSyncedMessage()}</Text>
             <Text style={styles.infoMessage}>All data has been safely backed up</Text>
           </View>
         </Animated.View>

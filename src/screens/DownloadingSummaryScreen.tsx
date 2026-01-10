@@ -9,9 +9,9 @@ import {
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
-import DocIconRed from '../assets/icons/DocIconRed.svg';
 import ProgressIndicator from '../components/ProgressIndicator';
 import { RootStackParamList } from '../types/business.types';
+import { getBills, getItems, getCategories } from '../services/storage';
 
 type DownloadingSummaryScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'DownloadingSummary'>;
@@ -23,6 +23,7 @@ const DownloadingSummaryScreen: React.FC<DownloadingSummaryScreenProps> = ({
   route,
 }) => {
   const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState('Preparing bill summary…');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -45,25 +46,8 @@ const DownloadingSummaryScreen: React.FC<DownloadingSummaryScreenProps> = ({
       })
     ).start();
 
-    // Progress animation
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 88) {
-          clearInterval(interval);
-          // Navigate to bill summary after completion
-          setTimeout(() => {
-            navigation.replace('BillSummary', {
-              dateRange: route.params?.dateRange || 'today',
-              customDays: route.params?.customDays,
-            });
-          }, 500);
-          return 88;
-        }
-        return prev + 8;
-      });
-    }, 200);
-
-    return () => clearInterval(interval);
+    // Generate summary with real progress
+    generateSummary();
   }, []);
 
   useEffect(() => {
@@ -73,6 +57,49 @@ const DownloadingSummaryScreen: React.FC<DownloadingSummaryScreenProps> = ({
       useNativeDriver: false,
     }).start();
   }, [progress]);
+
+  const generateSummary = async () => {
+    try {
+      // Step 1: Load bills (25%)
+      setProgress(25);
+      setStatusText('Loading bills from database…');
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 300));
+      const bills = await getBills();
+
+      // Step 2: Load items (50%)
+      setProgress(50);
+      setStatusText('Loading items data…');
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 300));
+      const items = await getItems();
+
+      // Step 3: Load categories (75%)
+      setProgress(75);
+      setStatusText('Loading categories…');
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 300));
+      const categories = await getCategories();
+
+      // Step 4: Complete (100%)
+      setProgress(100);
+      setStatusText('Summary ready!');
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
+
+      // Navigate to bill summary
+      navigation.replace('BillSummary', {
+        dateRange: route.params?.dateRange || 'today',
+        customDays: route.params?.customDays,
+      });
+    } catch (error) {
+      console.error('Failed to generate summary:', error);
+      setStatusText('Failed to generate summary');
+      // Still navigate but BillSummary will handle the error
+      setTimeout(() => {
+        navigation.replace('BillSummary', {
+          dateRange: route.params?.dateRange || 'today',
+          customDays: route.params?.customDays,
+        });
+      }, 1500);
+    }
+  };
 
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -98,7 +125,7 @@ const DownloadingSummaryScreen: React.FC<DownloadingSummaryScreenProps> = ({
         </View>
 
         {/* Status Text */}
-        <Text style={styles.statusTitle}>Preparing bill summary…</Text>
+        <Text style={styles.statusTitle}>{statusText}</Text>
         <Text style={styles.statusSubtext}>This may take a few seconds</Text>
 
         {/* Progress Bar */}

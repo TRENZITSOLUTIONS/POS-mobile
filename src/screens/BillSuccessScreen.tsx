@@ -1,4 +1,4 @@
-import React, {useEffect, useRef} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,13 @@ import {
   Animated,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import Svg, {Path} from 'react-native-svg';
 import AnimatedButton from '../components/AnimatedButton';
 import type {RootStackParamList} from '../types/business.types';
+import { getBusinessSettings } from '../services/storage';
 
 type BillSuccessScreenProps = NativeStackScreenProps<RootStackParamList, 'BillSuccess'>;
 
@@ -29,6 +31,9 @@ const CheckIcon = () => (
 const BillSuccessScreen: React.FC<BillSuccessScreenProps> = ({navigation, route}) => {
   const {cart, subtotal, discount, gst, total, paymentMethod, billNumber, timestamp} = route.params;
 
+  const [businessName, setBusinessName] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
   const checkOpacity = useRef(new Animated.Value(0)).current;
   const checkScale = useRef(new Animated.Value(0)).current;
   const titleOpacity = useRef(new Animated.Value(0)).current;
@@ -39,6 +44,28 @@ const BillSuccessScreen: React.FC<BillSuccessScreenProps> = ({navigation, route}
   const buttonsTranslateY = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
+    loadBusinessInfo();
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      startAnimations();
+    }
+  }, [isLoading]);
+
+  const loadBusinessInfo = async () => {
+    try {
+      const settings = await getBusinessSettings();
+      setBusinessName(settings.business_name || 'Business Name');
+    } catch (error) {
+      console.error('Failed to load business info:', error);
+      setBusinessName('Business Name');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startAnimations = () => {
     // Check icon
     Animated.sequence([
       Animated.delay(200),
@@ -110,14 +137,16 @@ const BillSuccessScreen: React.FC<BillSuccessScreenProps> = ({navigation, route}
         }),
       ]),
     ]).start();
-  }, []);
+  };
 
   const handlePrintBill = () => {
     console.log('Print bill:', billNumber);
-    // TODO: Implement print functionality
+    // TODO: Integrate with Bluetooth printer
+    // Example: await printBill({ billNumber, cart, total, businessName });
   };
 
   const handleNewBill = () => {
+    // Navigate back to billing screen
     navigation.navigate('Billing');
   };
 
@@ -133,6 +162,14 @@ const BillSuccessScreen: React.FC<BillSuccessScreenProps> = ({navigation, route}
       hour12: false,
     });
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#10B981" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -171,8 +208,8 @@ const BillSuccessScreen: React.FC<BillSuccessScreenProps> = ({navigation, route}
               transform: [{scale: billScale}],
             },
           ]}>
-          {/* Business Name */}
-          <Text style={styles.businessName}>Saravaan's Tiffen Centre</Text>
+          {/* Business Name - Now from database */}
+          <Text style={styles.businessName}>{businessName}</Text>
           <Text style={styles.timestamp}>{formatDate(timestamp)}</Text>
           <Text style={styles.billId}>{billNumber}</Text>
 
@@ -263,6 +300,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   content: {
     flex: 1,

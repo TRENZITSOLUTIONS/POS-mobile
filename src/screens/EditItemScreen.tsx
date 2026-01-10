@@ -10,49 +10,82 @@ import {
   TextInput,
   Image,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList, MenuItem } from '../types/business.types';
+import { getCategories, updateItem, getItemById } from '../services/storage';
 
 type EditItemScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'EditItem'>;
   route: RouteProp<RootStackParamList, 'EditItem'>;
 };
 
-const CATEGORIES = ['Rice & Dosa', 'Chapati & Curry', 'Tea & Coffee', 'Ice Cream'];
-
 const EditItemScreen: React.FC<EditItemScreenProps> = ({ navigation, route }) => {
   const { item } = route.params;
 
   const [itemName, setItemName] = useState(item.name);
   const [price, setPrice] = useState(item.price.toString());
-  const [category, setCategory] = useState(item.category);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>(item.category_ids || []);
   const [imageUrl, setImageUrl] = useState(item.image || '');
   const [useGlobalGST, setUseGlobalGST] = useState(true);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [changingImage, setChangingImage] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [categories, setCategories] = useState<any[]>([]);
 
   // Animations
   const headerAnim = useRef(new Animated.Value(0)).current;
   const formAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.stagger(100, [
-      Animated.timing(headerAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(formAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    loadData();
   }, []);
 
-  const handleUpdate = () => {
+  useEffect(() => {
+    if (!isLoading) {
+      Animated.stagger(100, [
+        Animated.timing(headerAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(formAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isLoading]);
+
+  const loadData = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Load categories from database
+      const categoriesData = await getCategories();
+      setCategories(categoriesData);
+
+      // Load fresh item data
+      const itemData = await getItemById(item.id);
+      if (itemData) {
+        setItemName(itemData.name);
+        setPrice(itemData.price.toString());
+        setSelectedCategoryIds(itemData.category_ids || []);
+        setImageUrl(itemData.image_url || itemData.image_path || '');
+      }
+    } catch (error) {
+      console.error('Failed to load data:', error);
+      Alert.alert('Error', 'Failed to load item data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdate = async () => {
     if (!itemName.trim()) {
       Alert.alert('Error', 'Please enter item name');
       return;
@@ -63,19 +96,39 @@ const EditItemScreen: React.FC<EditItemScreenProps> = ({ navigation, route }) =>
       return;
     }
 
-    // Update logic here
-    console.log('Updating item:', { itemName, price, category, imageUrl, useGlobalGST });
-    
-    Alert.alert(
-      'Success',
-      'Item updated successfully!',
-      [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]
-    );
+    if (selectedCategoryIds.length === 0) {
+      Alert.alert('Error', 'Please select at least one category');
+      return;
+    }
+
+    try {
+      setIsUpdating(true);
+
+      // Update item in database
+      await updateItem(item.id, {
+        name: itemName.trim(),
+        price: parseFloat(price),
+        category_ids: selectedCategoryIds,
+        // Note: Image upload functionality would go here
+        // For now, we'll just update other fields
+      });
+
+      Alert.alert(
+        'Success',
+        'Item updated successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Failed to update item:', error);
+      Alert.alert('Error', 'Failed to update item. Please try again.');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const handleImageUpload = () => {
@@ -93,6 +146,42 @@ const EditItemScreen: React.FC<EditItemScreenProps> = ({ navigation, route }) =>
   const handleChangeImage = () => {
     setChangingImage(true);
   };
+
+  const toggleCategory = (categoryId: string) => {
+    setSelectedCategoryIds(prev => {
+      if (prev.includes(categoryId)) {
+        // Remove category (but keep at least one)
+        if (prev.length > 1) {
+          return prev.filter(id => id !== categoryId);
+        }
+        return prev;
+      } else {
+        // Add category
+        return [...prev, categoryId];
+      }
+    });
+  };
+
+  const getSelectedCategoryNames = () => {
+    if (selectedCategoryIds.length === 0) return 'Select categories';
+    
+    const names = selectedCategoryIds
+      .map(id => categories.find(cat => cat.id === id)?.name)
+      .filter(Boolean);
+    
+    if (names.length === 0) return 'Select categories';
+    if (names.length === 1) return names[0];
+    return `${names[0]} +${names.length - 1}`;
+  };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#C62828" />
+        <Text style={styles.loadingText}>Loading item...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -184,6 +273,7 @@ const EditItemScreen: React.FC<EditItemScreenProps> = ({ navigation, route }) =>
                   placeholderTextColor="#999999"
                   value={imageUrl}
                   onChangeText={setImageUrl}
+                  editable={!isUpdating}
                 />
               </View>
             )}
@@ -198,6 +288,7 @@ const EditItemScreen: React.FC<EditItemScreenProps> = ({ navigation, route }) =>
               placeholderTextColor="#999999"
               value={itemName}
               onChangeText={setItemName}
+              editable={!isUpdating}
             />
           </View>
 
@@ -213,6 +304,7 @@ const EditItemScreen: React.FC<EditItemScreenProps> = ({ navigation, route }) =>
                 keyboardType="numeric"
                 value={price}
                 onChangeText={setPrice}
+                editable={!isUpdating}
               />
             </View>
           </View>
@@ -222,25 +314,39 @@ const EditItemScreen: React.FC<EditItemScreenProps> = ({ navigation, route }) =>
             <Text style={styles.label}>Category</Text>
             <TouchableOpacity
               style={styles.dropdown}
-              onPress={() => setShowCategoryDropdown(!showCategoryDropdown)}
+              onPress={() => !isUpdating && setShowCategoryDropdown(!showCategoryDropdown)}
+              disabled={isUpdating}
             >
-              <Text style={styles.dropdownText}>{category}</Text>
+              <Text style={styles.dropdownText}>{getSelectedCategoryNames()}</Text>
               <Text style={styles.dropdownArrow}>▼</Text>
             </TouchableOpacity>
             {showCategoryDropdown && (
               <View style={styles.dropdownMenu}>
-                {CATEGORIES.map((cat) => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      setCategory(cat);
-                      setShowCategoryDropdown(false);
-                    }}
-                  >
-                    <Text style={styles.dropdownItemText}>{cat}</Text>
-                  </TouchableOpacity>
-                ))}
+                {categories.length > 0 ? (
+                  categories.map((cat) => (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={styles.dropdownItem}
+                      onPress={() => toggleCategory(cat.id)}
+                    >
+                      <View style={styles.checkboxContainer}>
+                        <View style={[
+                          styles.checkbox,
+                          selectedCategoryIds.includes(cat.id) && styles.checkboxSelected
+                        ]}>
+                          {selectedCategoryIds.includes(cat.id) && (
+                            <Text style={styles.checkmark}>✓</Text>
+                          )}
+                        </View>
+                        <Text style={styles.dropdownItemText}>{cat.name}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <View style={styles.dropdownItem}>
+                    <Text style={styles.dropdownItemText}>No categories available</Text>
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -255,7 +361,8 @@ const EditItemScreen: React.FC<EditItemScreenProps> = ({ navigation, route }) =>
                   styles.gstButton,
                   useGlobalGST && styles.gstButtonSelected,
                 ]}
-                onPress={() => setUseGlobalGST(true)}
+                onPress={() => !isUpdating && setUseGlobalGST(true)}
+                disabled={isUpdating}
               >
                 <View style={[styles.radioOuter, useGlobalGST && styles.radioOuterSelected]}>
                   {useGlobalGST && <View style={styles.radioInner} />}
@@ -272,7 +379,8 @@ const EditItemScreen: React.FC<EditItemScreenProps> = ({ navigation, route }) =>
                   styles.gstButton,
                   !useGlobalGST && styles.gstButtonSelected,
                 ]}
-                onPress={() => setUseGlobalGST(false)}
+                onPress={() => !isUpdating && setUseGlobalGST(false)}
+                disabled={isUpdating}
               >
                 <View style={[styles.radioOuter, !useGlobalGST && styles.radioOuterSelected]}>
                   {!useGlobalGST && <View style={styles.radioInner} />}
@@ -289,8 +397,16 @@ const EditItemScreen: React.FC<EditItemScreenProps> = ({ navigation, route }) =>
 
       {/* Footer - Update Button */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.updateButton} onPress={handleUpdate}>
-          <Text style={styles.updateButtonText}>Update Item</Text>
+        <TouchableOpacity 
+          style={[styles.updateButton, isUpdating && styles.updateButtonDisabled]} 
+          onPress={handleUpdate}
+          disabled={isUpdating}
+        >
+          {isUpdating ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.updateButtonText}>Update Item</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -301,6 +417,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666666',
   },
   header: {
     backgroundColor: '#FFFFFF',
@@ -539,6 +664,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.6,
     borderBottomColor: '#F5F5F5',
   },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    borderRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: '#C62828',
+    borderColor: '#C62828',
+  },
+  checkmark: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   dropdownItemText: {
     fontSize: 16,
     lineHeight: 19,
@@ -616,6 +764,9 @@ const styles = StyleSheet.create({
     borderRadius: 16.4,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  updateButtonDisabled: {
+    opacity: 0.6,
   },
   updateButtonText: {
     fontSize: 16,

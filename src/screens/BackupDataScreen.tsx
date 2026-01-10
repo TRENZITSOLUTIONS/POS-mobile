@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,35 +7,112 @@ import {
   StatusBar,
   ScrollView,
   Animated,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/business.types';
+import { getUnsyncedBillsCount } from '../services/storage';
+import { syncAll, getNetworkStatus } from '../services/sync';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { formatDisplayDateTime } from '../utils/helpers';
 
 type BackupDataScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BackupData'>;
 };
 
 const BackupDataScreen: React.FC<BackupDataScreenProps> = ({ navigation }) => {
+  const [lastBackupTime, setLastBackupTime] = useState<string | null>(null);
+  const [unsyncedCount, setUnsyncedCount] = useState(0);
+  const [isOnline, setIsOnline] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    loadBackupData();
   }, []);
 
-  const handleBackupNow = () => {
-    navigation.navigate('BackingUp');
+  useEffect(() => {
+    if (!isLoading) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isLoading]);
+
+  const loadBackupData = async () => {
+    try {
+      // Get last sync time
+      const lastSync = await AsyncStorage.getItem('last_sync_time');
+      setLastBackupTime(lastSync);
+
+      // Get unsynced bills count
+      const count = await getUnsyncedBillsCount();
+      setUnsyncedCount(count);
+
+      // Check network status
+      const online = await getNetworkStatus();
+      setIsOnline(online);
+    } catch (error) {
+      console.error('Failed to load backup data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleBackupNow = async () => {
+    if (!isOnline) {
+      Alert.alert(
+        'Offline',
+        'Cannot backup now. Please check your internet connection and try again.'
+      );
+      return;
+    }
+
+    if (unsyncedCount === 0) {
+      Alert.alert('Already Synced', 'All data is already backed up.');
+      return;
+    }
+
+    setIsSyncing(true);
+
+    try {
+      // Trigger sync
+      const result = await syncAll();
+
+      if (result.success) {
+        // Save last sync time
+        const now = new Date().toISOString();
+        await AsyncStorage.setItem('last_sync_time', now);
+        setLastBackupTime(now);
+        setUnsyncedCount(0);
+
+        navigation.navigate('BackupComplete', {
+          categoriesSynced: result.categoriesSynced,
+          itemsSynced: result.itemsSynced,
+          billsSynced: result.billsSynced,
+        });
+      } else {
+        Alert.alert('Backup Failed', 'Some items could not be backed up. Please try again.');
+      }
+    } catch (error) {
+      console.error('Backup failed:', error);
+      Alert.alert('Error', 'Failed to backup data. Please try again.');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleViewDetails = () => {
@@ -49,6 +126,37 @@ const BackupDataScreen: React.FC<BackupDataScreenProps> = ({ navigation }) => {
   const handleRestoreData = () => {
     navigation.navigate('RestoreData');
   };
+
+  const formatLastBackup = () => {
+    if (!lastBackupTime) {
+      return 'Never backed up';
+    }
+    return formatDisplayDateTime(lastBackupTime);
+  };
+
+  const getSyncStatusText = () => {
+    if (!isOnline) {
+      return 'Offline - No connection';
+    }
+    if (unsyncedCount === 0) {
+      return 'All data is synced';
+    }
+    return `${unsyncedCount} item${unsyncedCount > 1 ? 's' : ''} pending sync`;
+  };
+
+  const getSyncStatusColor = () => {
+    if (!isOnline) return '#FFA726';
+    if (unsyncedCount === 0) return '#4CAF50';
+    return '#FFA726';
+  };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#C62828" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -87,7 +195,7 @@ const BackupDataScreen: React.FC<BackupDataScreenProps> = ({ navigation }) => {
           
           <View style={styles.backupInfo}>
             <Text style={styles.backupLabel}>
-              Last backup: <Text style={styles.backupValue}>14 Sep 2025, 10:32 AM</Text>
+              Last backup: <Text style={styles.backupValue}>{formatLastBackup()}</Text>
             </Text>
             <Text style={styles.backupDescription}>
               Bills, items, GST settings backed up
@@ -104,13 +212,27 @@ const BackupDataScreen: React.FC<BackupDataScreenProps> = ({ navigation }) => {
           <Text style={styles.cardTitle}>Sync Status</Text>
           
           <View style={styles.syncStatusRow}>
-            <View style={styles.syncIcon}>
-              <View style={styles.checkmark} />
+            <View style={[styles.syncIcon, { backgroundColor: getSyncStatusColor() }]}>
+              {unsyncedCount === 0 && isOnline ? (
+                <View style={styles.checkmark} />
+              ) : (
+                <Text style={styles.syncCountText}>
+                  {!isOnline ? '!' : unsyncedCount}
+                </Text>
+              )}
             </View>
-            <Text style={styles.syncedText}>All data is synced</Text>
+            <Text style={[styles.syncedText, { color: getSyncStatusColor() }]}>
+              {getSyncStatusText()}
+            </Text>
           </View>
 
-          <Text style={styles.syncDescription}>Your data is safely backed up</Text>
+          <Text style={styles.syncDescription}>
+            {isOnline 
+              ? (unsyncedCount === 0 
+                  ? 'Your data is safely backed up' 
+                  : 'Tap "Backup Now" to sync pending items')
+              : 'Connect to internet to sync your data'}
+          </Text>
         </View>
 
         {/* Backup Now Card */}
@@ -121,11 +243,18 @@ const BackupDataScreen: React.FC<BackupDataScreenProps> = ({ navigation }) => {
           </Text>
           
           <TouchableOpacity
-            style={styles.backupButton}
+            style={[styles.backupButton, (!isOnline || isSyncing) && styles.backupButtonDisabled]}
             onPress={handleBackupNow}
             activeOpacity={0.9}
+            disabled={!isOnline || isSyncing}
           >
-            <Text style={styles.backupButtonText}>Backup Now</Text>
+            {isSyncing ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.backupButtonText}>
+                {isOnline ? 'Backup Now' : 'Offline'}
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -175,6 +304,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     paddingHorizontal: 20,
@@ -294,6 +427,11 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '-45deg' }],
     marginTop: -2,
   },
+  syncCountText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
   syncedText: {
     fontSize: 16,
     color: '#4CAF50',
@@ -312,6 +450,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  backupButtonDisabled: {
+    opacity: 0.5,
   },
   backupButtonText: {
     fontSize: 16,

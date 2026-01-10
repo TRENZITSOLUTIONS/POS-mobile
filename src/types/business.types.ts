@@ -19,9 +19,18 @@ export interface MenuItem {
   id: string;
   name: string;
   price: number;
-  category: string;
+  category: string; // Keep for backward compatibility
+  category_ids?: string[]; // Add this for multiple categories
   image?: string;
-  gstRate?: number;
+  image_url?: string;
+  image_path?: string;
+  description?: string;
+  stock_quantity?: number;
+  sku?: string;
+  barcode?: string;
+  is_active?: boolean;
+  sort_order?: number;
+  categories?: Array<{ id: string; name: string }>; // Populated from database
 }
 
 export interface CartItem extends MenuItem {
@@ -72,6 +81,7 @@ export type RootStackParamList = {
   
   // Admin flow
   AdminPin: undefined;
+  SetAdminPin: undefined;
   AdminDashboard: undefined;
   ItemManagement: undefined;
   AddItem: undefined;
@@ -94,7 +104,11 @@ export type RootStackParamList = {
   TestPrintPreview: undefined;
   BackupDetails: undefined;
   BackingUp: undefined;
-  BackupComplete: undefined;
+  BackupComplete: {
+  categoriesSynced: number;
+  itemsSynced: number;
+  billsSynced: number;
+};
   ExportBills: undefined;
   BillScanner: undefined;
   BillPreview: {
@@ -106,9 +120,15 @@ export type RootStackParamList = {
     billData?: any;
   };
   ExportSuccess: {
-    exportType: string;
-    billData?: any;
+  exportType: string;
+  billCount?: number;        // ← ADD
+  exportData?: any[];        // ← ADD
+  dateRange?: {              // ← ADD
+    start: string;
+    end: string;
   };
+  billData?: any;  // Keep for compatibility
+};
   RestoreData: undefined;
   RestoringData: {
     fileName: string;

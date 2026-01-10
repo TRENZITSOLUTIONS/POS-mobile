@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   StatusBar,
   ScrollView,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FileIcon from '../assets/icons/FileIcon.svg';
@@ -14,6 +15,8 @@ import SettingsIcon from '../assets/icons/SettingsIcon.svg';
 import ItemsIcon from '../assets/icons/ItemsIcon.svg';
 import CalenderGreyIcon from '../assets/icons/CalenderGreyIcon.svg';
 import { RootStackParamList } from '../types/business.types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { formatDisplayDateTime } from '../utils/helpers';
 
 type BackupDetailsScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BackupDetails'>;
@@ -22,64 +25,99 @@ type BackupDetailsScreenProps = {
 interface BackupEntry {
   id: string;
   date: string;
-  items: string[];
+  timestamp: string;
+  items: Array<{
+    name: string;
+    count: number;
+  }>;
 }
 
 const BackupDetailsScreen: React.FC<BackupDetailsScreenProps> = ({ navigation }) => {
+  const [backupHistory, setBackupHistory] = useState<BackupEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    loadBackupHistory();
   }, []);
 
-  const backupHistory: BackupEntry[] = [
-    {
-      id: '1',
-      date: '14 Sep 2025, 10:32 AM',
-      items: ['Bills', 'Items', 'GST Settings', 'Bill Format'],
-    },
-    {
-      id: '2',
-      date: '13 Sep 2025, 6:15 PM',
-      items: ['Bills', 'Items', 'GST Settings', 'Bill Format'],
-    },
-    {
-      id: '3',
-      date: '12 Sep 2025, 2:48 PM',
-      items: ['Bills', 'Items', 'GST Settings'],
-    },
-    {
-      id: '4',
-      date: '11 Sep 2025, 11:20 AM',
-      items: ['Bills', 'Items', 'GST Settings', 'Bill Format'],
-    },
-  ];
+  useEffect(() => {
+    if (!isLoading) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isLoading]);
 
-  const renderBackupItem = (item: string) => {
+  const loadBackupHistory = async () => {
+    try {
+      const historyJson = await AsyncStorage.getItem('sync_history');
+      
+      if (historyJson) {
+        const history: BackupEntry[] = JSON.parse(historyJson);
+        // Sort by timestamp descending (newest first)
+        history.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setBackupHistory(history);
+      } else {
+        // No history yet - show empty state or fallback
+        setBackupHistory([]);
+      }
+    } catch (error) {
+      console.error('Failed to load backup history:', error);
+      setBackupHistory([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getIconForItem = (itemName: string) => {
+    const name = itemName.toLowerCase();
+    
+    if (name.includes('bill')) {
+      return <FileIcon width={16} height={16} />;
+    } else if (name.includes('item')) {
+      return <ItemsIcon width={16} height={16} />;
+    } else if (name.includes('categor')) {
+      return <ItemsIcon width={16} height={16} />;
+    } else if (name.includes('gst') || name.includes('setting')) {
+      return <SettingsIcon width={16} height={16} />;
+    } else {
+      return <FileIcon width={16} height={16} />;
+    }
+  };
+
+  const renderBackupItem = (item: { name: string; count: number }) => {
     return (
-      <View key={item} style={styles.backupItem}>
+      <View key={item.name} style={styles.backupItem}>
         <View style={styles.itemIcon}>
-          {item === 'Bills' && <FileIcon width={16} height={16} />}
-          {item === 'Items' && <ItemsIcon width={16} height={16} />}
-          {item === 'GST Settings' && <SettingsIcon width={16} height={16} />}
-          {item === 'Bill Format' && <FileIcon width={16} height={16} />}
+          {getIconForItem(item.name)}
         </View>
-        <Text style={styles.itemText}>{item}</Text>
+        <Text style={styles.itemText}>
+          {item.name}
+          {item.count > 0 && ` (${item.count})`}
+        </Text>
       </View>
     );
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#C62828" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -112,21 +150,30 @@ const BackupDetailsScreen: React.FC<BackupDetailsScreenProps> = ({ navigation })
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {backupHistory.map((backup) => (
-          <View key={backup.id} style={styles.backupCard}>
-            {/* Date Header */}
-            <View style={styles.dateHeader}>
-              <CalenderGreyIcon width={16} height={16} />
-              <Text style={styles.dateText}>{backup.date}</Text>
-            </View>
-
-            {/* Backed Up Items */}
-            <View style={styles.itemsContainer}>
-              <Text style={styles.backedUpLabel}>Backed up:</Text>
-              {backup.items.map((item) => renderBackupItem(item))}
-            </View>
+        {backupHistory.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>No backup history yet</Text>
+            <Text style={styles.emptySubtext}>
+              Backups will appear here once you sync your data
+            </Text>
           </View>
-        ))}
+        ) : (
+          backupHistory.map((backup) => (
+            <View key={backup.id} style={styles.backupCard}>
+              {/* Date Header */}
+              <View style={styles.dateHeader}>
+                <CalenderGreyIcon width={16} height={16} />
+                <Text style={styles.dateText}>{backup.date}</Text>
+              </View>
+
+              {/* Backed Up Items */}
+              <View style={styles.itemsContainer}>
+                <Text style={styles.backedUpLabel}>Backed up:</Text>
+                {backup.items.map((item) => renderBackupItem(item))}
+              </View>
+            </View>
+          ))
+        )}
       </ScrollView>
     </View>
   );
@@ -136,6 +183,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     paddingHorizontal: 20,
@@ -179,6 +230,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 20,
     gap: 16,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 8,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333333',
+    letterSpacing: -0.44,
+  },
+  emptySubtext: {
+    fontSize: 16,
+    color: '#999999',
+    letterSpacing: -0.31,
+    textAlign: 'center',
+    paddingHorizontal: 40,
   },
   backupCard: {
     backgroundColor: '#FFFFFF',

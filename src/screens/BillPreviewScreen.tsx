@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StatusBar,
   ScrollView,
-  Image,
   ActivityIndicator,
   Alert,
 } from 'react-native';
@@ -14,6 +13,7 @@ import TextRecognition from '@react-native-ml-kit/text-recognition';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types/business.types';
+import { getBusinessSettings } from '../services/storage';
 
 type BillPreviewScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BillPreview'>;
@@ -23,6 +23,7 @@ type BillPreviewScreenProps = {
 interface BillData {
   businessName: string;
   address: string;
+  gstin?: string;
   billNumber: string;
   date: string;
   time: string;
@@ -36,21 +37,35 @@ interface BillData {
   cgst: string;
   sgst: string;
   totalAmount: string;
+  rawText: string; // Store raw OCR text for debugging
 }
 
 const BillPreviewScreen: React.FC<BillPreviewScreenProps> = ({ navigation, route }) => {
   const { photoPath } = route.params;
   const [isProcessing, setIsProcessing] = useState(true);
   const [billData, setBillData] = useState<BillData | null>(null);
+  const [businessInfo, setBusinessInfo] = useState<any>(null);
 
   useEffect(() => {
+    loadBusinessInfo();
     processImage();
   }, []);
+
+  const loadBusinessInfo = async () => {
+    try {
+      const settings = await getBusinessSettings();
+      setBusinessInfo(settings);
+    } catch (error) {
+      console.error('Failed to load business info:', error);
+    }
+  };
 
   const processImage = async () => {
     try {
       // Perform OCR on the image
       const result = await TextRecognition.recognize(photoPath);
+      
+      console.log('OCR Raw Text:', result.text);
       
       // Parse the OCR text to extract bill data
       const parsedData = parseBillText(result.text);
@@ -60,7 +75,7 @@ const BillPreviewScreen: React.FC<BillPreviewScreenProps> = ({ navigation, route
       console.error('OCR Error:', error);
       Alert.alert(
         'Processing Error',
-        'Failed to read bill data. Please try again with better lighting.',
+        'Failed to read bill data. Please try again with better lighting and ensure the bill is clearly visible.',
         [
           { text: 'Retry', onPress: () => navigation.goBack() },
           { text: 'Cancel', onPress: () => navigation.navigate('ExportBills') },
@@ -72,52 +87,39 @@ const BillPreviewScreen: React.FC<BillPreviewScreenProps> = ({ navigation, route
   };
 
   const parseBillText = (text: string): BillData => {
-    // This is a sample parser - you'll need to customize based on your bill format
     const lines = text.split('\n').filter(line => line.trim() !== '');
     
-    // Extract business name (usually first line)
-    const businessName = lines[0] || 'Business Name';
+    // Extract business name (usually first 1-2 lines)
+    const businessName = extractBusinessName(lines);
     
-    // Extract address (usually second/third line)
-    const address = lines.slice(1, 3).join(', ') || 'Address';
+    // Extract address
+    const address = extractAddress(lines);
     
-    // Look for bill number
-    const billNumberMatch = text.match(/(?:Bill|Invoice|Receipt)\s*(?:No|#|Number)?:?\s*([A-Z0-9-]+)/i);
-    const billNumber = billNumberMatch ? billNumberMatch[1] : 'BIL-2024-1247';
+    // Extract GSTIN
+    const gstin = extractGSTIN(text);
     
-    // Look for date
-    const dateMatch = text.match(/(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4})/i);
-    const date = dateMatch ? dateMatch[1] : '25 Dec 2025';
+    // Extract bill number
+    const billNumber = extractBillNumber(text);
     
-    // Look for time
-    const timeMatch = text.match(/(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
-    const time = timeMatch ? timeMatch[1] : '12:49 AM';
+    // Extract date
+    const date = extractDate(text);
     
-    // Extract items (this is simplified - real implementation needs better parsing)
-    const items = [
-      { name: 'Butter Chicken', qty: '2', price: '₹320', total: '₹640' },
-      { name: 'Paneer Tikka', qty: '1', price: '₹280', total: '₹280' },
-      { name: 'Garlic Naan', qty: '3', price: '₹45', total: '₹135' },
-      { name: 'Dal Makhani', qty: '1', price: '₹180', total: '₹180' },
-      { name: 'Gulab Jamun', qty: '2', price: '₹60', total: '₹120' },
-    ];
+    // Extract time
+    const time = extractTime(text);
     
-    // Extract totals
-    const subtotalMatch = text.match(/(?:Subtotal|Sub Total|Total)[\s:]*₹?\s*(\d+(?:,\d+)*(?:\.\d+)?)/i);
-    const subtotal = subtotalMatch ? `₹${subtotalMatch[1]}` : '₹1355.00';
+    // Extract items (most complex part)
+    const items = extractItems(text);
     
-    const cgstMatch = text.match(/CGST.*?(\d+(?:\.\d+)?)/i);
-    const cgst = cgstMatch ? `₹${cgstMatch[1]}` : '₹67.75';
-    
-    const sgstMatch = text.match(/SGST.*?(\d+(?:\.\d+)?)/i);
-    const sgst = sgstMatch ? `₹${sgstMatch[1]}` : '₹67.75';
-    
-    const totalMatch = text.match(/(?:Grand Total|Final Total|Total Amount)[\s:]*₹?\s*(\d+(?:,\d+)*(?:\.\d+)?)/i);
-    const totalAmount = totalMatch ? `₹${totalMatch[1]}` : '₹1490.50';
+    // Extract financial totals
+    const subtotal = extractAmount(text, ['subtotal', 'sub total', 'sub-total']);
+    const cgst = extractAmount(text, ['cgst']);
+    const sgst = extractAmount(text, ['sgst']);
+    const totalAmount = extractAmount(text, ['total amount', 'grand total', 'final total', 'net amount']);
     
     return {
       businessName,
       address,
+      gstin,
       billNumber,
       date,
       time,
@@ -126,10 +128,165 @@ const BillPreviewScreen: React.FC<BillPreviewScreenProps> = ({ navigation, route
       cgst,
       sgst,
       totalAmount,
+      rawText: text,
     };
   };
 
+  const extractBusinessName = (lines: string[]): string => {
+    // Business name is usually the first non-empty line
+    // Skip lines that are too short or numbers
+    for (const line of lines.slice(0, 5)) {
+      const cleaned = line.trim();
+      if (cleaned.length > 3 && !/^\d+$/.test(cleaned)) {
+        return cleaned;
+      }
+    }
+    return 'Business Name Not Found';
+  };
+
+  const extractAddress = (lines: string[]): string => {
+    // Address usually comes after business name
+    // Look for lines with common address keywords
+    const addressLines = lines.filter(line => {
+      const lower = line.toLowerCase();
+      return lower.includes('road') || 
+             lower.includes('street') || 
+             lower.includes('nagar') ||
+             lower.includes('colony') ||
+             /\d{6}/.test(line); // Pincode
+    });
+    
+    return addressLines.slice(0, 2).join(', ') || 'Address Not Found';
+  };
+
+  const extractGSTIN = (text: string): string | undefined => {
+    const gstinMatch = text.match(/GSTIN?[\s:]*([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[0-9]{1}[Z]{1}[A-Z0-9]{1})/i);
+    return gstinMatch ? gstinMatch[1] : undefined;
+  };
+
+  const extractBillNumber = (text: string): string => {
+    // Look for various bill number patterns
+    const patterns = [
+      /(?:Bill|Invoice|Receipt)\s*(?:No|#|Number)?[\s:]*([A-Z0-9-]+)/i,
+      /(?:No|#)[\s:]*([A-Z0-9-]{5,})/i,
+    ];
+    
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    
+    return 'Not Found';
+  };
+
+  const extractDate = (text: string): string => {
+    // Look for date patterns
+    const patterns = [
+      /(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/,
+      /(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{2,4})/i,
+      /(\d{2,4}[-\/]\d{1,2}[-\/]\d{1,2})/,
+    ];
+    
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    
+    // Return current date if not found
+    const today = new Date();
+    return today.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  const extractTime = (text: string): string => {
+    const timeMatch = text.match(/(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)/i);
+    if (timeMatch && timeMatch[1]) {
+      return timeMatch[1];
+    }
+    
+    // Return current time if not found
+    const now = new Date();
+    return now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const extractItems = (text: string): Array<{ name: string; qty: string; price: string; total: string }> => {
+    const items: Array<{ name: string; qty: string; price: string; total: string }> = [];
+    const lines = text.split('\n');
+    
+    // Look for lines that might be items
+    // Pattern: Name + Quantity + Price + Total (with various separators)
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Skip headers, totals, and empty lines
+      if (!line || 
+          line.toLowerCase().includes('item') ||
+          line.toLowerCase().includes('qty') ||
+          line.toLowerCase().includes('subtotal') ||
+          line.toLowerCase().includes('cgst') ||
+          line.toLowerCase().includes('sgst') ||
+          line.toLowerCase().includes('total')) {
+        continue;
+      }
+      
+      // Try to match item pattern: Name Qty Price Total
+      // Example: "Butter Chicken 2 320 640"
+      const itemMatch = line.match(/^(.+?)\s+(\d+)\s+(?:₹|Rs\.?)?\s*(\d+(?:\.\d+)?)\s+(?:₹|Rs\.?)?\s*(\d+(?:\.\d+)?)$/);
+      
+      if (itemMatch) {
+        items.push({
+          name: itemMatch[1].trim(),
+          qty: itemMatch[2],
+          price: `₹${itemMatch[3]}`,
+          total: `₹${itemMatch[4]}`,
+        });
+      }
+    }
+    
+    // If no items found, return empty array (no hardcoded fallback)
+    return items;
+  };
+
+  const extractAmount = (text: string, keywords: string[]): string => {
+    for (const keyword of keywords) {
+      const pattern = new RegExp(`${keyword}[\\s:]*(?:₹|Rs\\.?)?\\s*(\\d+(?:,\\d+)*(?:\\.\\d+)?)`, 'i');
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        return `₹${match[1].replace(',', '')}`;
+      }
+    }
+    
+    return '₹0.00';
+  };
+
   const handleExport = () => {
+    if (!billData) {
+      Alert.alert('Error', 'No bill data to export');
+      return;
+    }
+
+    // Check if any critical data is missing
+    if (billData.items.length === 0) {
+      Alert.alert(
+        'Incomplete Data',
+        'No items were detected in the bill. Would you like to continue anyway?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Continue', 
+            onPress: () => navigation.navigate('ExportingBills', {
+              exportType: 'today',
+              billData,
+            })
+          },
+        ]
+      );
+      return;
+    }
+
     navigation.navigate('ExportingBills', {
       exportType: 'today',
       billData,
@@ -138,6 +295,12 @@ const BillPreviewScreen: React.FC<BillPreviewScreenProps> = ({ navigation, route
 
   const handleRetake = () => {
     navigation.goBack();
+  };
+
+  const handleViewRawText = () => {
+    if (billData) {
+      Alert.alert('Raw OCR Text', billData.rawText, [{ text: 'OK' }]);
+    }
   };
 
   if (isProcessing) {
@@ -169,8 +332,16 @@ const BillPreviewScreen: React.FC<BillPreviewScreenProps> = ({ navigation, route
 
         <View style={styles.headerTitleContainer}>
           <Text style={styles.title}>Bill Preview</Text>
-          <Text style={styles.subtitle}>Demo scanned bill</Text>
+          <Text style={styles.subtitle}>Scanned bill data</Text>
         </View>
+
+        <TouchableOpacity
+          onPress={handleViewRawText}
+          activeOpacity={0.7}
+          style={styles.debugButton}
+        >
+          <Text style={styles.debugButtonText}>View Raw</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -180,9 +351,11 @@ const BillPreviewScreen: React.FC<BillPreviewScreenProps> = ({ navigation, route
       >
         {/* Business Info */}
         <View style={styles.section}>
-          <Text style={styles.businessName}>{billData?.businessName || 'Spice Garden Restaurant'}</Text>
-          <Text style={styles.businessSubtext}>GSST: 29AABCT1332L1Z</Text>
-          <Text style={styles.businessSubtext}>{billData?.address || '123 MG Road, Bangalore - 560001'}</Text>
+          <Text style={styles.businessName}>{billData?.businessName || 'Business Name Not Detected'}</Text>
+          {billData?.gstin && (
+            <Text style={styles.businessSubtext}>GSTIN: {billData.gstin}</Text>
+          )}
+          <Text style={styles.businessSubtext}>{billData?.address || 'Address Not Detected'}</Text>
         </View>
 
         {/* Bill Details */}
@@ -198,47 +371,69 @@ const BillPreviewScreen: React.FC<BillPreviewScreenProps> = ({ navigation, route
           </View>
         </View>
 
-        {/* Items Table Header */}
-        <View style={styles.tableHeader}>
-          <Text style={[styles.tableHeaderText, { flex: 2 }]}>Item</Text>
-          <Text style={[styles.tableHeaderText, { flex: 0.5, textAlign: 'center' }]}>Qty</Text>
-          <Text style={[styles.tableHeaderText, { flex: 1, textAlign: 'right' }]}>Price</Text>
-          <Text style={[styles.tableHeaderText, { flex: 1, textAlign: 'right' }]}>Total</Text>
-        </View>
+        {/* Items Section */}
+        {billData && billData.items.length > 0 ? (
+          <>
+            {/* Items Table Header */}
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableHeaderText, { flex: 2 }]}>Item</Text>
+              <Text style={[styles.tableHeaderText, { flex: 0.5, textAlign: 'center' }]}>Qty</Text>
+              <Text style={[styles.tableHeaderText, { flex: 1, textAlign: 'right' }]}>Price</Text>
+              <Text style={[styles.tableHeaderText, { flex: 1, textAlign: 'right' }]}>Total</Text>
+            </View>
 
-        {/* Items List */}
-        {billData?.items.map((item, index) => (
-          <View key={index} style={styles.tableRow}>
-            <Text style={[styles.tableCell, { flex: 2 }]}>{item.name}</Text>
-            <Text style={[styles.tableCell, { flex: 0.5, textAlign: 'center' }]}>{item.qty}</Text>
-            <Text style={[styles.tableCell, { flex: 1, textAlign: 'right' }]}>{item.price}</Text>
-            <Text style={[styles.tableCell, { flex: 1, textAlign: 'right' }]}>{item.total}</Text>
+            {/* Items List */}
+            {billData.items.map((item, index) => (
+              <View key={index} style={styles.tableRow}>
+                <Text style={[styles.tableCell, { flex: 2 }]} numberOfLines={2}>{item.name}</Text>
+                <Text style={[styles.tableCell, { flex: 0.5, textAlign: 'center' }]}>{item.qty}</Text>
+                <Text style={[styles.tableCell, { flex: 1, textAlign: 'right' }]}>{item.price}</Text>
+                <Text style={[styles.tableCell, { flex: 1, textAlign: 'right' }]}>{item.total}</Text>
+              </View>
+            ))}
+          </>
+        ) : (
+          <View style={styles.noItemsContainer}>
+            <Text style={styles.noItemsText}>No items detected</Text>
+            <Text style={styles.noItemsSubtext}>The OCR couldn't detect individual items from the bill</Text>
           </View>
-        ))}
+        )}
 
         {/* Totals */}
         <View style={styles.totalsSection}>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Subtotal</Text>
-            <Text style={styles.totalValue}>{billData?.subtotal}</Text>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>CGST (5%)</Text>
-            <Text style={styles.totalValue}>{billData?.cgst}</Text>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>SGST (5%)</Text>
-            <Text style={styles.totalValue}>{billData?.sgst}</Text>
-          </View>
+          {billData && billData.subtotal !== '₹0.00' && (
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Subtotal</Text>
+              <Text style={styles.totalValue}>{billData.subtotal}</Text>
+            </View>
+          )}
+          {billData && billData.cgst !== '₹0.00' && (
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>CGST</Text>
+              <Text style={styles.totalValue}>{billData.cgst}</Text>
+            </View>
+          )}
+          {billData && billData.sgst !== '₹0.00' && (
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>SGST</Text>
+              <Text style={styles.totalValue}>{billData.sgst}</Text>
+            </View>
+          )}
           <View style={[styles.totalRow, styles.grandTotalRow]}>
             <Text style={styles.grandTotalLabel}>Total Amount</Text>
-            <Text style={styles.grandTotalValue}>{billData?.totalAmount}</Text>
+            <Text style={styles.grandTotalValue}>{billData?.totalAmount || '₹0.00'}</Text>
           </View>
         </View>
 
-        {/* Footer */}
-        <Text style={styles.footerText}>Thank you for your visit!</Text>
-        <Text style={styles.footerText}>Visit again</Text>
+        {/* Warning if data is incomplete */}
+        {billData && billData.items.length === 0 && (
+          <View style={styles.warningCard}>
+            <Text style={styles.warningText}>⚠️ Incomplete Data Detected</Text>
+            <Text style={styles.warningSubtext}>
+              Some information couldn't be extracted. You can still export, but please review the data.
+            </Text>
+          </View>
+        )}
       </ScrollView>
 
       {/* Bottom Actions */}
@@ -321,6 +516,17 @@ const styles = StyleSheet.create({
     color: '#999999',
     letterSpacing: -0.15,
   },
+  debugButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 6,
+  },
+  debugButtonText: {
+    fontSize: 12,
+    color: '#666666',
+    fontWeight: '500',
+  },
   scrollView: {
     flex: 1,
   },
@@ -390,6 +596,25 @@ const styles = StyleSheet.create({
     color: '#333333',
     letterSpacing: -0.15,
   },
+  noItemsContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    marginVertical: 16,
+  },
+  noItemsText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666666',
+    marginBottom: 8,
+  },
+  noItemsSubtext: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
+    paddingHorizontal: 40,
+  },
   totalsSection: {
     marginTop: 16,
     paddingTop: 16,
@@ -430,12 +655,24 @@ const styles = StyleSheet.create({
     color: '#C62828',
     letterSpacing: -0.31,
   },
-  footerText: {
+  warningCard: {
+    backgroundColor: '#FFF4E5',
+    borderWidth: 1,
+    borderColor: '#FFB74D',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  warningText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#F57C00',
+    marginBottom: 8,
+  },
+  warningSubtext: {
     fontSize: 14,
-    color: '#999999',
-    textAlign: 'center',
-    marginTop: 8,
-    letterSpacing: -0.15,
+    color: '#666666',
+    lineHeight: 20,
   },
   bottomActions: {
     position: 'absolute',

@@ -8,6 +8,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { Camera, useCameraDevice } from 'react-native-vision-camera';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -21,6 +22,7 @@ const BillScannerScreen: React.FC<BillScannerScreenProps> = ({ navigation }) => 
   const [hasPermission, setHasPermission] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [flashEnabled, setFlashEnabled] = useState(false);
   const camera = useRef<Camera>(null);
   
   // Try to get back camera
@@ -35,6 +37,8 @@ const BillScannerScreen: React.FC<BillScannerScreenProps> = ({ navigation }) => 
       // Check current permission status
       const cameraPermission = await Camera.getCameraPermissionStatus();
       
+      console.log('Camera permission status:', cameraPermission);
+      
       if (cameraPermission === 'granted') {
         setHasPermission(true);
         setIsCameraReady(true);
@@ -44,6 +48,8 @@ const BillScannerScreen: React.FC<BillScannerScreenProps> = ({ navigation }) => 
       if (cameraPermission === 'not-determined') {
         // Request permission
         const newPermission = await Camera.requestCameraPermission();
+        console.log('New camera permission:', newPermission);
+        
         setHasPermission(newPermission === 'granted');
         setIsCameraReady(newPermission === 'granted');
         
@@ -58,7 +64,7 @@ const BillScannerScreen: React.FC<BillScannerScreenProps> = ({ navigation }) => 
       console.error('Permission error:', error);
       Alert.alert(
         'Camera Error',
-        'Failed to initialize camera. Please try again.',
+        'Failed to initialize camera. Please check your device settings.',
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     }
@@ -67,23 +73,43 @@ const BillScannerScreen: React.FC<BillScannerScreenProps> = ({ navigation }) => 
   const showPermissionAlert = () => {
     Alert.alert(
       'Camera Permission Required',
-      'Please grant camera permission in settings to scan bills.',
+      'Camera access is needed to scan bills. Please grant camera permission in your device settings.',
       [
-        { text: 'Cancel', onPress: () => navigation.goBack() },
-        { text: 'Open Settings', onPress: () => Camera.requestCameraPermission() },
+        { text: 'Cancel', style: 'cancel', onPress: () => navigation.goBack() },
+        { 
+          text: 'Open Settings', 
+          onPress: () => {
+            if (Platform.OS === 'ios') {
+              Linking.openURL('app-settings:');
+            } else {
+              Linking.openSettings();
+            }
+          }
+        },
       ]
     );
   };
 
+  const toggleFlash = () => {
+    setFlashEnabled(!flashEnabled);
+  };
+
   const capturePhoto = async () => {
-    if (!camera.current || isCapturing || !isCameraReady) return;
+    if (!camera.current || isCapturing || !isCameraReady) {
+      console.log('Cannot capture: camera ready?', isCameraReady, 'capturing?', isCapturing);
+      return;
+    }
     
     try {
       setIsCapturing(true);
       
+      console.log('Taking photo with flash:', flashEnabled ? 'on' : 'off');
+      
       const photo = await camera.current.takePhoto({
-        flash: 'off',
+        flash: flashEnabled ? 'on' : 'off',
       });
+
+      console.log('Photo captured:', photo.path);
 
       // Navigate to bill preview with photo path
       navigation.navigate('BillPreview', {
@@ -91,7 +117,11 @@ const BillScannerScreen: React.FC<BillScannerScreenProps> = ({ navigation }) => 
       });
     } catch (error) {
       console.error('Failed to capture photo:', error);
-      Alert.alert('Error', 'Failed to capture photo. Please try again.');
+      Alert.alert(
+        'Capture Error', 
+        'Failed to capture photo. Please try again.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setIsCapturing(false);
     }
@@ -101,7 +131,13 @@ const BillScannerScreen: React.FC<BillScannerScreenProps> = ({ navigation }) => 
     navigation.goBack();
   };
 
-  // Show loading while checking permissions
+  const handleRetry = () => {
+    setIsCameraReady(false);
+    setHasPermission(false);
+    checkAndRequestPermissions();
+  };
+
+  // Show loading or error while checking permissions
   if (!hasPermission || !device) {
     return (
       <View style={styles.container}>
@@ -109,13 +145,24 @@ const BillScannerScreen: React.FC<BillScannerScreenProps> = ({ navigation }) => 
         <View style={styles.permissionContainer}>
           {!device ? (
             <>
-              <Text style={styles.permissionText}>No camera device found</Text>
-              <TouchableOpacity
-                style={styles.retryButton}
-                onPress={() => navigation.goBack()}
-              >
-                <Text style={styles.retryButtonText}>Go Back</Text>
-              </TouchableOpacity>
+              <Text style={styles.permissionTitle}>No Camera Found</Text>
+              <Text style={styles.permissionText}>
+                Unable to access camera device. Please check your device permissions.
+              </Text>
+              <View style={styles.buttonRow}>
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={() => navigation.goBack()}
+                >
+                  <Text style={styles.secondaryButtonText}>Go Back</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={handleRetry}
+                >
+                  <Text style={styles.primaryButtonText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
             </>
           ) : (
             <>
@@ -139,6 +186,7 @@ const BillScannerScreen: React.FC<BillScannerScreenProps> = ({ navigation }) => 
         device={device}
         isActive={true}
         photo={true}
+        enableZoomGesture={true}
       />
 
       {/* Top Overlay */}
@@ -154,8 +202,18 @@ const BillScannerScreen: React.FC<BillScannerScreenProps> = ({ navigation }) => 
 
           <Text style={styles.title}>Scan Bill</Text>
 
-          <View style={styles.spacer} />
+          <TouchableOpacity
+            style={styles.flashButton}
+            onPress={toggleFlash}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.flashIcon}>{flashEnabled ? '⚡' : '⚡'}</Text>
+          </TouchableOpacity>
         </View>
+        
+        <Text style={styles.subtitle}>
+          Position the bill clearly within the frame
+        </Text>
       </View>
 
       {/* Middle Section with Scan Frame */}
@@ -178,23 +236,33 @@ const BillScannerScreen: React.FC<BillScannerScreenProps> = ({ navigation }) => 
           </View>
         </View>
 
-        <Text style={styles.instructionText}>Align bill inside the frame</Text>
+        <View style={styles.instructionContainer}>
+          <Text style={styles.instructionText}>
+            ✓ Ensure good lighting
+          </Text>
+          <Text style={styles.instructionText}>
+            ✓ Keep bill flat and readable
+          </Text>
+        </View>
       </View>
 
       {/* Bottom Overlay with Capture Button */}
       <View style={styles.bottomOverlay}>
-        <TouchableOpacity
-          style={[styles.captureButton, isCapturing && styles.captureButtonDisabled]}
-          onPress={capturePhoto}
-          disabled={isCapturing}
-          activeOpacity={0.9}
-        >
-          {isCapturing ? (
-            <ActivityIndicator size="large" color="#FFFFFF" />
-          ) : (
-            <View style={styles.captureButtonInner} />
-          )}
-        </TouchableOpacity>
+        <View style={styles.captureContainer}>
+          <TouchableOpacity
+            style={[styles.captureButton, isCapturing && styles.captureButtonDisabled]}
+            onPress={capturePhoto}
+            disabled={isCapturing}
+            activeOpacity={0.9}
+          >
+            {isCapturing ? (
+              <ActivityIndicator size="large" color="#FFFFFF" />
+            ) : (
+              <View style={styles.captureButtonInner} />
+            )}
+          </TouchableOpacity>
+          <Text style={styles.captureHint}>Tap to capture</Text>
+        </View>
       </View>
     </View>
   );
@@ -211,20 +279,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  permissionText: {
-    fontSize: 16,
+  permissionTitle: {
+    fontSize: 22,
+    fontWeight: '700',
     color: '#FFFFFF',
     textAlign: 'center',
-    marginTop: 16,
+    marginBottom: 12,
+    letterSpacing: -0.26,
   },
-  retryButton: {
-    marginTop: 24,
+  permissionText: {
+    fontSize: 16,
+    color: '#CCCCCC',
+    textAlign: 'center',
+    marginTop: 16,
+    lineHeight: 24,
+    letterSpacing: -0.31,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 32,
+  },
+  primaryButton: {
     paddingHorizontal: 32,
-    paddingVertical: 12,
+    paddingVertical: 14,
     backgroundColor: '#C62828',
     borderRadius: 10,
   },
-  retryButtonText: {
+  primaryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: -0.31,
+  },
+  secondaryButton: {
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    backgroundColor: '#333333',
+    borderRadius: 10,
+  },
+  secondaryButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
@@ -235,9 +329,9 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 92,
     paddingTop: 16,
     paddingHorizontal: 16,
+    paddingBottom: 16,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     zIndex: 10,
   },
@@ -254,11 +348,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   closeIcon: {
-    fontSize: 24,
-    fontWeight: '600',
+    fontSize: 32,
+    fontWeight: '300',
     color: '#FFFFFF',
     lineHeight: 32,
-    letterSpacing: 0.07,
   },
   title: {
     fontSize: 22,
@@ -267,15 +360,29 @@ const styles = StyleSheet.create({
     letterSpacing: -0.26,
     lineHeight: 33,
   },
-  spacer: {
+  flashButton: {
     width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  flashIcon: {
+    fontSize: 24,
+    color: '#FFFFFF',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#CCCCCC',
+    textAlign: 'center',
+    marginTop: 8,
+    letterSpacing: -0.15,
   },
   middleContainer: {
     position: 'absolute',
-    top: 92,
+    top: 120,
     left: 0,
     right: 0,
-    height: 600,
+    bottom: 160,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -286,7 +393,7 @@ const styles = StyleSheet.create({
   scanFrame: {
     width: 288,
     height: 384,
-    borderWidth: 1.81,
+    borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.6)',
     borderRadius: 16,
     position: 'relative',
@@ -299,32 +406,32 @@ const styles = StyleSheet.create({
   cornerTopLeft: {
     top: -2,
     left: -2,
-    borderTopWidth: 3.62,
-    borderLeftWidth: 3.62,
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
     borderColor: '#FFFFFF',
     borderTopLeftRadius: 16,
   },
   cornerTopRight: {
     top: -2,
     right: -2,
-    borderTopWidth: 3.62,
-    borderRightWidth: 3.62,
+    borderTopWidth: 4,
+    borderRightWidth: 4,
     borderColor: '#FFFFFF',
     borderTopRightRadius: 16,
   },
   cornerBottomLeft: {
     bottom: -2,
     left: -2,
-    borderBottomWidth: 3.62,
-    borderLeftWidth: 3.62,
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
     borderColor: '#FFFFFF',
     borderBottomLeftRadius: 16,
   },
   cornerBottomRight: {
     bottom: -2,
     right: -2,
-    borderBottomWidth: 3.62,
-    borderRightWidth: 3.62,
+    borderBottomWidth: 4,
+    borderRightWidth: 4,
     borderColor: '#FFFFFF',
     borderBottomRightRadius: 16,
   },
@@ -336,7 +443,7 @@ const styles = StyleSheet.create({
     marginLeft: -48,
     width: 96,
     height: 96,
-    opacity: 0.2,
+    opacity: 0.15,
   },
   cameraIcon: {
     width: 96,
@@ -354,11 +461,14 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
     borderRadius: 12,
   },
-  instructionText: {
+  instructionContainer: {
     marginTop: 24,
-    fontSize: 16,
+    gap: 8,
+  },
+  instructionText: {
+    fontSize: 14,
     color: '#FFFFFF',
-    letterSpacing: -0.31,
+    letterSpacing: -0.15,
     textAlign: 'center',
   },
   bottomOverlay: {
@@ -372,12 +482,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     zIndex: 10,
   },
+  captureContainer: {
+    alignItems: 'center',
+    gap: 12,
+  },
   captureButton: {
     width: 80,
     height: 80,
     backgroundColor: '#FFFFFF',
     borderRadius: 40,
-    borderWidth: 3.62,
+    borderWidth: 4,
     borderColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
@@ -395,6 +509,11 @@ const styles = StyleSheet.create({
     height: 64,
     backgroundColor: '#C62828',
     borderRadius: 32,
+  },
+  captureHint: {
+    fontSize: 14,
+    color: '#CCCCCC',
+    letterSpacing: -0.15,
   },
 });
 

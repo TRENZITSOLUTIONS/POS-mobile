@@ -8,10 +8,14 @@ import {
   ScrollView,
   Animated,
   Clipboard,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/business.types';
 import QRCode from 'react-native-qrcode-svg';
+import { getUserData } from '../services/auth';
+import { getBusinessSettings } from '../services/storage';
 
 type AddPeopleScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'AddPeople'>;
@@ -20,25 +24,66 @@ type AddPeopleScreenProps = {
 type CopyState = 'idle' | 'copying' | 'copied';
 
 const AddPeopleScreen: React.FC<AddPeopleScreenProps> = ({ navigation }) => {
-  const [joinCode] = useState('123456');
+  const [joinCode, setJoinCode] = useState('');
+  const [businessName, setBusinessName] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const [copyState, setCopyState] = useState<CopyState>('idle');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    loadBusinessData();
   }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isLoading]);
+
+  const loadBusinessData = async () => {
+    try {
+      // Get user data (contains vendor_id)
+      const userData = await getUserData();
+      
+      if (!userData) {
+        Alert.alert('Error', 'Please login to continue');
+        navigation.goBack();
+        return;
+      }
+
+      // Get business settings
+      const settings = await getBusinessSettings();
+      
+      // Use vendor_id as join code
+      const code = userData.vendor_id || userData.user_id || 'DEMO123';
+      setJoinCode(code);
+      
+      // Get business name from settings or userData
+      const name = settings?.business_name || userData.business_name || 'My Business';
+      setBusinessName(name);
+
+    } catch (error) {
+      console.error('Failed to load business data:', error);
+      Alert.alert('Error', 'Failed to load business information');
+      // Set fallback values
+      setJoinCode('DEMO123');
+      setBusinessName('My Business');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleCopyCode = async () => {
     setCopyState('copying');
@@ -86,6 +131,14 @@ const AddPeopleScreen: React.FC<AddPeopleScreenProps> = ({ navigation }) => {
     }
   };
 
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#C62828" />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
@@ -110,7 +163,7 @@ const AddPeopleScreen: React.FC<AddPeopleScreenProps> = ({ navigation }) => {
 
         <View style={styles.headerText}>
           <Text style={styles.title}>Add People</Text>
-          <Text style={styles.subtitle}>Invite staff to join this business</Text>
+          <Text style={styles.subtitle}>Invite staff to join {businessName}</Text>
         </View>
       </Animated.View>
 
@@ -194,6 +247,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F2F2F2',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     backgroundColor: '#FFFFFF',

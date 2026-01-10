@@ -9,9 +9,11 @@ import {
   Animated,
   TextInput,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/business.types';
+import { getBills, getItems, getCategories } from '../services/storage';
 
 type DashboardScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Dashboard'>;
@@ -28,54 +30,40 @@ interface DashboardData {
     soldCount: number;
     category: string;
     image?: string;
-  };
+  } | null;
   leastSoldProduct: {
     name: string;
     soldCount: number;
     category: string;
     image?: string;
-  };
+  } | null;
   mostSoldCategory: {
     name: string;
     itemsSold: number;
-  };
+  } | null;
   leastSoldCategory: {
     name: string;
     itemsSold: number;
-  };
+  } | null;
 }
 
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
   const [selectedRange, setSelectedRange] = useState<DateRange>('today');
   const [customDays, setCustomDays] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState<DashboardData>({
+    totalSales: 0,
+    totalBills: 0,
+    avgBillValue: 0,
+    mostSoldProduct: null,
+    leastSoldProduct: null,
+    mostSoldCategory: null,
+    leastSoldCategory: null,
+  });
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
-
-  // Sample data for different date ranges
-  const [dashboardData, setDashboardData] = useState<DashboardData>({
-    totalSales: 1366,
-    totalBills: 4,
-    avgBillValue: 342,
-    mostSoldProduct: {
-      name: 'Idli',
-      soldCount: 6,
-      category: 'Rice & Dosa',
-    },
-    leastSoldProduct: {
-      name: 'Vada',
-      soldCount: 1,
-      category: 'Rice & Dosa',
-    },
-    mostSoldCategory: {
-      name: 'Rice & Dosa',
-      itemsSold: 18,
-    },
-    leastSoldCategory: {
-      name: 'Tea & Coffee',
-      itemsSold: 2,
-    },
-  });
 
   useEffect(() => {
     Animated.parallel([
@@ -90,64 +78,207 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
         useNativeDriver: true,
       }),
     ]).start();
+
+    loadDashboardData('today');
   }, []);
+
+  const calculateDateRange = (range: DateRange, days?: number) => {
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    
+    let start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    switch (range) {
+      case 'today':
+        // Already set to today
+        break;
+      case 'yesterday':
+        start.setDate(start.getDate() - 1);
+        end.setDate(end.getDate() - 1);
+        break;
+      case 'last7days':
+        start.setDate(start.getDate() - 7);
+        break;
+      case 'custom':
+        if (days) {
+          start.setDate(start.getDate() - days);
+        }
+        break;
+    }
+
+    return { start, end };
+  };
+
+  const loadDashboardData = async (range: DateRange, customDaysValue?: string) => {
+    try {
+      setIsLoading(true);
+
+      const days = customDaysValue ? parseInt(customDaysValue, 10) : undefined;
+      const dateRange = calculateDateRange(range, days);
+
+      // Load bills from database
+      const allBills = await getBills();
+      
+      // Filter bills by date range
+      const filteredBills = allBills.filter(bill => {
+        const billDate = new Date(bill.created_at);
+        return billDate >= dateRange.start && billDate <= dateRange.end;
+      });
+
+      // Load items and categories for product analysis
+      const allItems = await getItems();
+      const allCategories = await getCategories();
+
+      // Calculate dashboard metrics
+      const data = calculateDashboardMetrics(filteredBills, allItems, allCategories);
+      
+      setDashboardData(data);
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error);
+      // Set empty data on error
+      setDashboardData({
+        totalSales: 0,
+        totalBills: 0,
+        avgBillValue: 0,
+        mostSoldProduct: null,
+        leastSoldProduct: null,
+        mostSoldCategory: null,
+        leastSoldCategory: null,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const calculateDashboardMetrics = (
+    bills: any[],
+    items: any[],
+    categories: any[]
+  ): DashboardData => {
+    // Total sales
+    const totalSales = bills.reduce((sum, bill) => sum + (bill.total_amount || 0), 0);
+    
+    // Total bills
+    const totalBills = bills.length;
+    
+    // Average bill value
+    const avgBillValue = totalBills > 0 ? Math.round(totalSales / totalBills) : 0;
+    
+    // Track product sales
+    const productSales: { [key: string]: { name: string; count: number; categoryId: string; itemData: any } } = {};
+    
+    // Track category sales
+    const categorySales: { [key: string]: number } = {};
+
+    bills.forEach(bill => {
+      try {
+        const billItems = JSON.parse(bill.items || '[]');
+        
+        billItems.forEach((item: any) => {
+          const itemId = item.id;
+          const quantity = item.quantity || 0;
+          
+          // Track product sales
+          if (!productSales[itemId]) {
+            const itemData = items.find(i => i.id === itemId);
+            productSales[itemId] = {
+              name: item.name,
+              count: 0,
+              categoryId: itemData?.category_ids?.[0] || '',
+              itemData,
+            };
+          }
+          productSales[itemId].count += quantity;
+          
+          // Track category sales
+          const itemData = items.find(i => i.id === itemId);
+          if (itemData && itemData.category_ids && itemData.category_ids.length > 0) {
+            const categoryId = itemData.category_ids[0];
+            categorySales[categoryId] = (categorySales[categoryId] || 0) + quantity;
+          }
+        });
+      } catch (error) {
+        console.error('Error parsing bill items:', error);
+      }
+    });
+
+    // Find most/least sold products
+    const productEntries = Object.entries(productSales);
+    let mostSoldProduct = null;
+    let leastSoldProduct = null;
+
+    if (productEntries.length > 0) {
+      const sortedProducts = productEntries.sort((a, b) => b[1].count - a[1].count);
+      
+      const mostSold = sortedProducts[0][1];
+      const category = categories.find(c => c.id === mostSold.categoryId);
+      mostSoldProduct = {
+        name: mostSold.name,
+        soldCount: mostSold.count,
+        category: category?.name || 'Uncategorized',
+      };
+
+      const leastSold = sortedProducts[sortedProducts.length - 1][1];
+      const leastCategory = categories.find(c => c.id === leastSold.categoryId);
+      leastSoldProduct = {
+        name: leastSold.name,
+        soldCount: leastSold.count,
+        category: leastCategory?.name || 'Uncategorized',
+      };
+    }
+
+    // Find most/least sold categories
+    const categoryEntries = Object.entries(categorySales);
+    let mostSoldCategory = null;
+    let leastSoldCategory = null;
+
+    if (categoryEntries.length > 0) {
+      const sortedCategories = categoryEntries.sort((a, b) => b[1] - a[1]);
+      
+      const mostCat = categories.find(c => c.id === sortedCategories[0][0]);
+      if (mostCat) {
+        mostSoldCategory = {
+          name: mostCat.name,
+          itemsSold: sortedCategories[0][1],
+        };
+      }
+
+      const leastCat = categories.find(c => c.id === sortedCategories[sortedCategories.length - 1][0]);
+      if (leastCat) {
+        leastSoldCategory = {
+          name: leastCat.name,
+          itemsSold: sortedCategories[sortedCategories.length - 1][1],
+        };
+      }
+    }
+
+    return {
+      totalSales,
+      totalBills,
+      avgBillValue,
+      mostSoldProduct,
+      leastSoldProduct,
+      mostSoldCategory,
+      leastSoldCategory,
+    };
+  };
 
   const handleRangeSelect = (range: DateRange) => {
     setSelectedRange(range);
     setShowCustomInput(range === 'custom');
 
-    // Update data based on selected range
-    switch (range) {
-      case 'today':
-        setDashboardData({
-          totalSales: 1366,
-          totalBills: 4,
-          avgBillValue: 342,
-          mostSoldProduct: { name: 'Idli', soldCount: 6, category: 'Rice & Dosa' },
-          leastSoldProduct: { name: 'Vada', soldCount: 1, category: 'Rice & Dosa' },
-          mostSoldCategory: { name: 'Rice & Dosa', itemsSold: 18 },
-          leastSoldCategory: { name: 'Tea & Coffee', itemsSold: 2 },
-        });
-        break;
-      case 'yesterday':
-        setDashboardData({
-          totalSales: 830,
-          totalBills: 3,
-          avgBillValue: 277,
-          mostSoldProduct: { name: 'Masala Dosa', soldCount: 5, category: 'Rice & Dosa' },
-          leastSoldProduct: { name: 'Curd Rice', soldCount: 1, category: 'Rice & Dosa' },
-          mostSoldCategory: { name: 'Rice & Dosa', itemsSold: 16 },
-          leastSoldCategory: { name: 'Snacks', itemsSold: 3 },
-        });
-        break;
-      case 'last7days':
-        setDashboardData({
-          totalSales: 4894,
-          totalBills: 15,
-          avgBillValue: 326,
-          mostSoldProduct: { name: 'Idli', soldCount: 11, category: 'Rice & Dosa' },
-          leastSoldProduct: { name: 'Mutton Biryani', soldCount: 1, category: 'Rice & Dosa' },
-          mostSoldCategory: { name: 'Rice & Dosa', itemsSold: 56 },
-          leastSoldCategory: { name: 'Tea & Coffee', itemsSold: 2 },
-        });
-        break;
-      case 'custom':
-        // Show empty state or custom input
-        break;
+    if (range !== 'custom') {
+      loadDashboardData(range);
+    } else {
+      // Clear custom days when switching to custom
+      setCustomDays('');
     }
   };
 
   const handleApplyCustomRange = () => {
     if (customDays && parseInt(customDays) > 0) {
-      setDashboardData({
-        totalSales: 2616,
-        totalBills: 8,
-        avgBillValue: 327,
-        mostSoldProduct: { name: 'Veg Meals', soldCount: 9, category: 'Rice & Dosa' },
-        leastSoldProduct: { name: 'Curd Rice', soldCount: 1, category: 'Rice & Dosa' },
-        mostSoldCategory: { name: 'Rice & Dosa', itemsSold: 34 },
-        leastSoldCategory: { name: 'Chapati & Curry', itemsSold: 2 },
-      });
+      loadDashboardData('custom', customDays);
     }
   };
 
@@ -162,7 +293,16 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
     return '';
   };
 
-  const hasData = selectedRange !== 'custom' || (selectedRange === 'custom' && customDays);
+  const hasData = selectedRange !== 'custom' || (selectedRange === 'custom' && customDays && !isLoading);
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#C62828" />
+        <Text style={styles.loadingText}>Loading dashboard...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -316,7 +456,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
             {/* Total Sales Card */}
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Total Sales</Text>
-              <Text style={styles.metricValue}>₹ {dashboardData.totalSales.toLocaleString()}</Text>
+              <Text style={styles.metricValue}>₹ {dashboardData.totalSales.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
               <Text style={styles.metricSubtext}>Based on selected date range</Text>
             </View>
 
@@ -333,34 +473,38 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
             </View>
 
             {/* Most Sold Product Card */}
-            <View style={styles.productCard}>
-              <Text style={styles.cardTitle}>Most Sold Product</Text>
-              <View style={styles.productInfo}>
-                <View style={styles.productImage}>
-                  <Text style={styles.imagePlaceholder}>🍛</Text>
-                </View>
-                <View style={styles.productDetails}>
-                  <Text style={styles.productName}>{dashboardData.mostSoldProduct.name}</Text>
-                  <Text style={styles.productSold}>{dashboardData.mostSoldProduct.soldCount} sold</Text>
-                  <Text style={styles.productCategory}>Category: {dashboardData.mostSoldProduct.category}</Text>
+            {dashboardData.mostSoldProduct && (
+              <View style={styles.productCard}>
+                <Text style={styles.cardTitle}>Most Sold Product</Text>
+                <View style={styles.productInfo}>
+                  <View style={styles.productImage}>
+                    <Text style={styles.imagePlaceholder}>🍛</Text>
+                  </View>
+                  <View style={styles.productDetails}>
+                    <Text style={styles.productName}>{dashboardData.mostSoldProduct.name}</Text>
+                    <Text style={styles.productSold}>{dashboardData.mostSoldProduct.soldCount} sold</Text>
+                    <Text style={styles.productCategory}>Category: {dashboardData.mostSoldProduct.category}</Text>
+                  </View>
                 </View>
               </View>
-            </View>
+            )}
 
             {/* Least Sold Product Card */}
-            <View style={styles.productCard}>
-              <Text style={styles.cardTitle}>Least Sold Product</Text>
-              <View style={styles.productInfo}>
-                <View style={styles.productImage}>
-                  <Text style={styles.imagePlaceholder}>🥘</Text>
-                </View>
-                <View style={styles.productDetails}>
-                  <Text style={styles.productName}>{dashboardData.leastSoldProduct.name}</Text>
-                  <Text style={styles.productSold}>{dashboardData.leastSoldProduct.soldCount} sold</Text>
-                  <Text style={styles.productCategory}>Category: {dashboardData.leastSoldProduct.category}</Text>
+            {dashboardData.leastSoldProduct && (
+              <View style={styles.productCard}>
+                <Text style={styles.cardTitle}>Least Sold Product</Text>
+                <View style={styles.productInfo}>
+                  <View style={styles.productImage}>
+                    <Text style={styles.imagePlaceholder}>🥘</Text>
+                  </View>
+                  <View style={styles.productDetails}>
+                    <Text style={styles.productName}>{dashboardData.leastSoldProduct.name}</Text>
+                    <Text style={styles.productSold}>{dashboardData.leastSoldProduct.soldCount} sold</Text>
+                    <Text style={styles.productCategory}>Category: {dashboardData.leastSoldProduct.category}</Text>
+                  </View>
                 </View>
               </View>
-            </View>
+            )}
 
             {/* Daily Bill Summary Card */}
             <View style={styles.summaryCard}>
@@ -378,28 +522,40 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
             </View>
 
             {/* Category Performance Card */}
-            <View style={styles.categoryCard}>
-              <Text style={styles.cardTitle}>Category Performance</Text>
+            {(dashboardData.mostSoldCategory || dashboardData.leastSoldCategory) && (
+              <View style={styles.categoryCard}>
+                <Text style={styles.cardTitle}>Category Performance</Text>
 
-              <View style={styles.categorySection}>
-                <Text style={styles.categoryLabel}>Most Sold Category</Text>
-                <Text style={styles.categoryName}>{dashboardData.mostSoldCategory.name}</Text>
-                <Text style={styles.categoryItems}>{dashboardData.mostSoldCategory.itemsSold} items sold</Text>
+                {dashboardData.mostSoldCategory && (
+                  <View style={styles.categorySection}>
+                    <Text style={styles.categoryLabel}>Most Sold Category</Text>
+                    <Text style={styles.categoryName}>{dashboardData.mostSoldCategory.name}</Text>
+                    <Text style={styles.categoryItems}>{dashboardData.mostSoldCategory.itemsSold} items sold</Text>
+                  </View>
+                )}
+
+                {dashboardData.leastSoldCategory && (
+                  <View style={styles.categorySectionBottom}>
+                    <Text style={styles.categoryLabel}>Least Sold Category</Text>
+                    <Text style={styles.categoryName}>{dashboardData.leastSoldCategory.name}</Text>
+                    <Text style={styles.categoryItems}>{dashboardData.leastSoldCategory.itemsSold} items sold</Text>
+                  </View>
+                )}
               </View>
+            )}
 
-              {dashboardData.leastSoldCategory && (
-                <View style={styles.categorySectionBottom}>
-                  <Text style={styles.categoryLabel}>Least Sold Category</Text>
-                  <Text style={styles.categoryName}>{dashboardData.leastSoldCategory.name}</Text>
-                  <Text style={styles.categoryItems}>{dashboardData.leastSoldCategory.itemsSold} items sold</Text>
-                </View>
-              )}
-            </View>
+            {/* Show message if no bills */}
+            {dashboardData.totalBills === 0 && (
+              <View style={styles.emptyStateCard}>
+                <Text style={styles.emptyStateText}>No bills found for this date range</Text>
+                <Text style={styles.emptyStateSubtext}>Try selecting a different date range</Text>
+              </View>
+            )}
           </>
         ) : (
           <View style={styles.emptyStateCard}>
-            <Text style={styles.emptyStateText}>No data available for custom range</Text>
-            <Text style={styles.emptyStateSubtext}>Try selecting a different date range</Text>
+            <Text style={styles.emptyStateText}>Please enter number of days and tap Apply</Text>
+            <Text style={styles.emptyStateSubtext}>Custom date range requires input</Text>
           </View>
         )}
       </ScrollView>
@@ -411,6 +567,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666666',
   },
   header: {
     paddingHorizontal: 20,

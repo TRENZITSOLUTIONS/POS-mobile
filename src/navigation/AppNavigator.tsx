@@ -55,6 +55,7 @@ import ExportingBillsScreen from '../screens/ExportingBillsScreen';
 import RestoreDataScreen from '../screens/RestoreDataScreen';
 import RestoringDataScreen from '../screens/RestoringDataScreen';
 import RestoreSuccessScreen from '../screens/RestoreSuccessScreen';
+import SetAdminPinScreen from '../screens/SetAdminPinScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -287,17 +288,22 @@ const AppNavigator: React.FC = () => {
       <Stack.Screen 
         name="RestoreData" 
         component={RestoreDataScreen}
-        options={{ headerShown: false }}
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
       />
       <Stack.Screen 
         name="RestoringData" 
         component={RestoringDataScreen}
-        options={{ headerShown: false }}
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
       />
       <Stack.Screen 
         name="RestoreSuccess" 
         component={RestoreSuccessScreen}
-        options={{ headerShown: false }}
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
+      />
+      <Stack.Screen 
+        name="SetAdminPin" 
+        component={SetAdminPinScreen} 
+        options={{ animation: 'slide_from_right', animationDuration: 300 }}
       />
     </Stack.Navigator>
   );

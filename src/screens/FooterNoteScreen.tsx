@@ -11,9 +11,12 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/business.types';
+import { getBusinessSettings, saveBusinessSettings } from '../services/storage';
 
 type FooterNoteScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'FooterNote'>;
@@ -22,38 +25,93 @@ type FooterNoteScreenProps = {
 const FooterNoteScreen: React.FC<FooterNoteScreenProps> = ({ navigation }) => {
   const [footerText, setFooterText] = useState('');
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    loadFooterNote();
   }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isLoading]);
+
+  const loadFooterNote = async () => {
+    try {
+      setIsLoading(true);
+      const settings = await getBusinessSettings();
+      
+      if (settings && settings.bill_footer_note) {
+        setFooterText(settings.bill_footer_note);
+      }
+    } catch (error) {
+      console.error('Failed to load footer note:', error);
+      Alert.alert('Error', 'Failed to load footer note');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleApplyFooter = () => {
     setConfirmModalVisible(true);
   };
 
   const handleConfirmApply = async () => {
-    setConfirmModalVisible(false);
-    // Save footer note here (AsyncStorage or API)
-    // await AsyncStorage.setItem('footer_note', footerText);
+    try {
+      setIsSaving(true);
+      setConfirmModalVisible(false);
+      
+      // Save footer note to database
+      await saveBusinessSettings({
+        bill_footer_note: footerText.trim(),
+      });
+
+      Alert.alert(
+        'Success',
+        'Footer note updated successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Failed to save footer note:', error);
+      Alert.alert('Error', 'Failed to save footer note. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancelConfirm = () => {
     setConfirmModalVisible(false);
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#C62828" />
+        <Text style={styles.loadingText}>Loading footer note...</Text>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -122,6 +180,7 @@ const FooterNoteScreen: React.FC<FooterNoteScreenProps> = ({ navigation }) => {
             value={footerText}
             onChangeText={setFooterText}
             maxLength={200}
+            editable={!isSaving}
           />
 
           <Text style={styles.helperText}>
@@ -165,11 +224,16 @@ const FooterNoteScreen: React.FC<FooterNoteScreenProps> = ({ navigation }) => {
           ]}
         >
           <TouchableOpacity
-            style={styles.applyButton}
+            style={[styles.applyButton, isSaving && styles.applyButtonDisabled]}
             onPress={handleApplyFooter}
             activeOpacity={0.9}
+            disabled={isSaving}
           >
-            <Text style={styles.applyButtonText}>Apply Footer Note</Text>
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.applyButtonText}>Apply Footer Note</Text>
+            )}
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
@@ -213,6 +277,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666666',
   },
   scrollContent: {
     padding: 20,
@@ -321,6 +394,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  applyButtonDisabled: {
+    opacity: 0.6,
   },
   applyButtonText: {
     fontSize: 16,

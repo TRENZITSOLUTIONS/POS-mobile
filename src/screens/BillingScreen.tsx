@@ -7,11 +7,12 @@ import {
   Animated,
   TouchableOpacity,
   ScrollView,
-  FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../types/business.types';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { getItems, getCategories } from '../services/storage';
 
 type BillingScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Billing'>;
@@ -22,6 +23,7 @@ type MenuItem = {
   name: string;
   price: number;
   category: string;
+  categoryId: string;
   image?: string;
 };
 
@@ -30,27 +32,15 @@ type CartItem = MenuItem & {
 };
 
 const MEAL_TIMES = ['Morning', 'Lunch', 'Evening', 'Dinner'];
-const CATEGORIES = ['All Items', 'Rice & Dosa', 'Chapati & Curry'];
 
 const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMealTime, setSelectedMealTime] = useState('Morning');
   const [selectedCategory, setSelectedCategory] = useState('All Items');
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([
-    {id: '1', name: 'Masala Dosa', price: 80, category: 'Rice & Dosa'},
-    {id: '2', name: 'Idli Sambar', price: 50, category: 'Rice & Dosa'},
-    {id: '3', name: 'Plain Dosa', price: 60, category: 'Rice & Dosa'},
-    {id: '4', name: 'Vada', price: 40, category: 'Rice & Dosa'},
-    {id: '5', name: 'Chapati', price: 25, category: 'Chapati & Curry'},
-    {id: '6', name: 'Roti with Dal', price: 70, category: 'Chapati & Curry'},
-    {id: '7', name: 'Paneer Butter Masala', price: 150, category: 'Chapati & Curry'},
-    {id: '8', name: 'Tea', price: 20, category: 'All Items'},
-    {id: '9', name: 'Coffee', price: 30, category: 'All Items'},
-    {id: '10', name: 'Samosa', price: 15, category: 'All Items'},
-    {id: '11', name: 'Poha', price: 40, category: 'All Items'},
-    {id: '12', name: 'Upma', price: 45, category: 'All Items'},
-  ]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<Array<{id: string; name: string}>>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const headerTranslateY = useRef(new Animated.Value(-20)).current;
@@ -62,6 +52,49 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
   const contentTranslateY = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      startAnimations();
+    }
+  }, [isLoading]);
+
+  const loadData = async () => {
+    try {
+      // Load categories
+      const categoriesData = await getCategories();
+      setCategories(categoriesData);
+
+      // Load items
+      const itemsData = await getItems();
+      
+      // Map items with category names
+      const mappedItems = itemsData.map(item => {
+        // Get category name from first category (assuming single category per item for POS)
+        const categoryId = item.category_ids?.[0] || '';
+        const category = categoriesData.find(cat => cat.id === categoryId);
+        
+        return {
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          category: category?.name || 'Uncategorized',
+          categoryId: categoryId,
+          image: item.image_url,
+        };
+      });
+
+      setMenuItems(mappedItems);
+    } catch (error) {
+      console.error('Failed to load data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startAnimations = () => {
     // Header animation
     Animated.sequence([
       Animated.delay(100),
@@ -133,7 +166,7 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
         }),
       ]),
     ]).start();
-  }, []);
+  };
 
   const addToCart = (item: MenuItem) => {
     const existingItem = cart.find(cartItem => cartItem.id === item.id);
@@ -185,6 +218,34 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
   const handleBack = () => {
     navigation.goBack();
   };
+
+  // Get unique category names for filter buttons
+  const getCategoryFilters = () => {
+    const uniqueCategories = Array.from(new Set(menuItems.map(item => item.category)));
+    return ['All Items', ...uniqueCategories];
+  };
+
+  // Filter items based on search and category
+  const getFilteredItems = () => {
+    return menuItems
+      .filter(item => 
+        selectedCategory === 'All Items' || item.category === selectedCategory
+      )
+      .filter(item => 
+        item.name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+  };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#C62828" />
+      </View>
+    );
+  }
+
+  const filteredItems = getFilteredItems();
+  const categoryFilters = getCategoryFilters();
 
   return (
     <View style={styles.container}>
@@ -262,46 +323,53 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
             },
           ]}>
           <Text style={styles.sectionTitle}>Popular Items</Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.popularItemsScroll}>
-            {menuItems.slice(0, 5).map(item => {
-              const quantity = getItemQuantity(item.id);
-              return (
-                <TouchableOpacity 
-                  key={item.id} 
-                  style={styles.popularItemCard}
-                  onPress={() => quantity === 0 && addToCart(item)}
-                  activeOpacity={quantity > 0 ? 1 : 0.7}>
-                  <View style={styles.itemImageContainer}>
-                    <Icon name="restaurant-outline" size={40} color="#C62828" />
-                  </View>
-                  <Text style={styles.popularItemName}>{item.name}</Text>
-                  <Text style={styles.popularItemPrice}>₹{item.price}</Text>
-                  {quantity === 0 ? (
-                    <View style={styles.addButtonSmall}>
-                      <Text style={styles.addButtonSmallText}>Add</Text>
+          {menuItems.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>No items available</Text>
+              <Text style={styles.emptySubtext}>Add items to get started</Text>
+            </View>
+          ) : (
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.popularItemsScroll}>
+              {menuItems.slice(0, 5).map(item => {
+                const quantity = getItemQuantity(item.id);
+                return (
+                  <TouchableOpacity 
+                    key={item.id} 
+                    style={styles.popularItemCard}
+                    onPress={() => quantity === 0 && addToCart(item)}
+                    activeOpacity={quantity > 0 ? 1 : 0.7}>
+                    <View style={styles.itemImageContainer}>
+                      <Icon name="restaurant-outline" size={40} color="#C62828" />
                     </View>
-                  ) : (
-                    <View style={styles.quantityControlSmall}>
-                      <TouchableOpacity
-                        style={styles.quantityButtonSmall}
-                        onPress={() => removeFromCart(item.id)}>
-                        <Text style={styles.quantityButtonTextSmall}>-</Text>
-                      </TouchableOpacity>
-                      <Text style={styles.quantityTextSmall}>{quantity}</Text>
-                      <TouchableOpacity
-                        style={styles.quantityButtonSmall}
-                        onPress={() => addToCart(item)}>
-                        <Text style={styles.quantityButtonTextSmall}>+</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+                    <Text style={styles.popularItemName} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.popularItemPrice}>₹{item.price.toFixed(2)}</Text>
+                    {quantity === 0 ? (
+                      <View style={styles.addButtonSmall}>
+                        <Text style={styles.addButtonSmallText}>Add</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.quantityControlSmall}>
+                        <TouchableOpacity
+                          style={styles.quantityButtonSmall}
+                          onPress={() => removeFromCart(item.id)}>
+                          <Text style={styles.quantityButtonTextSmall}>-</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.quantityTextSmall}>{quantity}</Text>
+                        <TouchableOpacity
+                          style={styles.quantityButtonSmall}
+                          onPress={() => addToCart(item)}>
+                          <Text style={styles.quantityButtonTextSmall}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
         </Animated.View>
 
         {/* Category Filters */}
@@ -311,7 +379,7 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
             {opacity: contentOpacity},
           ]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {CATEGORIES.map(category => (
+            {categoryFilters.map(category => (
               <TouchableOpacity
                 key={category}
                 style={[
@@ -338,15 +406,14 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
             {opacity: contentOpacity},
           ]}>
           <Text style={styles.sectionTitle}>All Items</Text>
-          <View style={styles.allItemsGrid}>
-            {menuItems
-              .filter(item => 
-                selectedCategory === 'All Items' || item.category === selectedCategory
-              )
-              .filter(item => 
-                item.name.toLowerCase().includes(searchQuery.toLowerCase())
-              )
-              .map(item => {
+          {filteredItems.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>No items found</Text>
+              <Text style={styles.emptySubtext}>Try a different search or category</Text>
+            </View>
+          ) : (
+            <View style={styles.allItemsGrid}>
+              {filteredItems.map(item => {
                 const quantity = getItemQuantity(item.id);
                 return (
                   <TouchableOpacity 
@@ -357,8 +424,8 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
                     <View style={styles.itemImageContainer}>
                       <Icon name="restaurant-outline" size={40} color="#C62828" />
                     </View>
-                    <Text style={styles.allItemName}>{item.name}</Text>
-                    <Text style={styles.allItemPrice}>₹{item.price}</Text>
+                    <Text style={styles.allItemName} numberOfLines={2}>{item.name}</Text>
+                    <Text style={styles.allItemPrice}>₹{item.price.toFixed(2)}</Text>
                     {quantity === 0 ? (
                       <View style={styles.addButtonSmall}>
                         <Text style={styles.addButtonSmallText}>Add</Text>
@@ -381,7 +448,8 @@ const BillingScreen: React.FC<BillingScreenProps> = ({navigation}) => {
                   </TouchableOpacity>
                 );
               })}
-          </View>
+            </View>
+          )}
         </Animated.View>
       </ScrollView>
 
@@ -405,6 +473,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     paddingTop: 48,
@@ -637,78 +709,6 @@ const styles = StyleSheet.create({
     color: '#333333',
     marginHorizontal: 12,
     minWidth: 20,
-    textAlign: 'center',
-  },
-  itemCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-  },
-  itemInfo: {
-    flex: 1,
-  },
-  itemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333333',
-    marginBottom: 4,
-  },
-  itemPrice: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#C62828',
-  },
-  addButton: {
-    backgroundColor: '#C62828',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  addButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  quantityControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    padding: 4,
-  },
-  quantityButton: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#C62828',
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quantityButtonText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  quantityText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333333',
-    marginHorizontal: 16,
-    minWidth: 24,
     textAlign: 'center',
   },
   cartFooter: {

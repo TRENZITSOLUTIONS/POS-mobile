@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,12 @@ import {
   StatusBar,
   ScrollView,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/business.types';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { getBusinessSettings } from '../services/storage';
 
 type BillFormatScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BillFormat'>;
@@ -22,6 +24,7 @@ interface BillFormatOption {
   subtitle: string;
   route?: 'BusinessDetails' | 'InvoiceFormat' | 'InvoiceStructure' | 'LogoUpload' | 'FooterNote' | 'BillNumbering';
   multiline?: boolean;
+  statusKey?: 'business_name' | 'business_logo_path' | 'bill_footer_note' | 'bill_prefix';
 }
 
 const BILL_FORMAT_OPTIONS: BillFormatOption[] = [
@@ -31,6 +34,7 @@ const BILL_FORMAT_OPTIONS: BillFormatOption[] = [
     subtitle: 'Edit shop name, address, and contact details shown on the bill',
     route: 'BusinessDetails',
     multiline: true,
+    statusKey: 'business_name',
   },
   {
     id: '2',
@@ -50,39 +54,73 @@ const BILL_FORMAT_OPTIONS: BillFormatOption[] = [
     subtitle: 'Add or change logos used in app and bill',
     route: 'LogoUpload',
     multiline: true,
+    statusKey: 'business_logo_path',
   },
   {
     id: '5',
     title: 'Footer Note',
     subtitle: 'Add a thank-you message on the bill',
     route: 'FooterNote',
+    statusKey: 'bill_footer_note',
   },
   {
     id: '6',
     title: 'Bill Numbering',
     subtitle: 'Configure invoice number format',
     route: 'BillNumbering',
+    statusKey: 'bill_prefix',
   },
 ];
 
 const BillFormatScreen: React.FC<BillFormatScreenProps> = ({ navigation }) => {
+  const [configStatus, setConfigStatus] = useState<Record<string, boolean>>({});
+  const [isLoading, setIsLoading] = useState(true);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    loadConfigStatus();
   }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isLoading]);
+
+  const loadConfigStatus = async () => {
+    try {
+      const settings = await getBusinessSettings();
+      
+      const status: Record<string, boolean> = {};
+      
+      // Check which settings are configured
+      if (settings) {
+        status['business_name'] = !!settings.business_name;
+        status['business_logo_path'] = !!settings.business_logo_path;
+        status['bill_footer_note'] = !!settings.bill_footer_note;
+        status['bill_prefix'] = !!settings.bill_prefix;
+      }
+      
+      setConfigStatus(status);
+    } catch (error) {
+      console.error('Failed to load config status:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleOptionPress = (route?: BillFormatOption['route']) => {
     if (route) {
@@ -109,6 +147,19 @@ const BillFormatScreen: React.FC<BillFormatScreenProps> = ({ navigation }) => {
       }
     }
   };
+
+  const isConfigured = (statusKey?: string): boolean => {
+    if (!statusKey) return false;
+    return configStatus[statusKey] || false;
+  };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#C62828" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -172,7 +223,14 @@ const BillFormatScreen: React.FC<BillFormatScreenProps> = ({ navigation }) => {
               >
                 <View style={styles.optionContent}>
                   <View style={styles.optionTextContainer}>
-                    <Text style={styles.optionTitle}>{option.title}</Text>
+                    <View style={styles.titleRow}>
+                      <Text style={styles.optionTitle}>{option.title}</Text>
+                      {option.statusKey && isConfigured(option.statusKey) && (
+                        <View style={styles.configuredBadge}>
+                          <Icon name="checkmark-circle" size={16} color="#4CAF50" />
+                        </View>
+                      )}
+                    </View>
                     <Text
                       style={styles.optionSubtitle}
                       numberOfLines={option.multiline ? 2 : 1}
@@ -196,6 +254,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     paddingHorizontal: 20,
@@ -264,13 +326,22 @@ const styles = StyleSheet.create({
   optionTextContainer: {
     flex: 1,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
   optionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#333333',
-    marginBottom: 4,
     letterSpacing: -0.44,
     lineHeight: 27,
+  },
+  configuredBadge: {
+    width: 16,
+    height: 16,
   },
   optionSubtitle: {
     fontSize: 16,

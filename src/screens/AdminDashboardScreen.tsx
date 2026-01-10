@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,27 @@ import {
   Animated,
   StatusBar,
   ScrollView,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/business.types';
+import { getBusinessSettings } from '../services/storage';
+import { getUserData } from '../services/auth';
 
 type AdminDashboardScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'AdminDashboard'>;
 };
 
 const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation }) => {
+  const [businessInfo, setBusinessInfo] = useState({
+    name: 'Loading...',
+    address: 'Loading...',
+    phone: 'Loading...',
+    email: 'Loading...',
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
   // Animations
   const headerAnim = useRef(new Animated.Value(0)).current;
   const businessCardAnim = useRef(new Animated.Value(0)).current;
@@ -28,54 +40,88 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
   const card6Anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.stagger(100, [
-      Animated.timing(headerAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(businessCardAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(settingsAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(card1Anim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(card2Anim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(card3Anim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(card4Anim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(card5Anim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(card6Anim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    loadBusinessData();
   }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      Animated.stagger(100, [
+        Animated.timing(headerAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(businessCardAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(settingsAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(card1Anim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(card2Anim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(card3Anim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(card4Anim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(card5Anim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(card6Anim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isLoading]);
+
+  const loadBusinessData = async () => {
+    try {
+      // Get business settings from SQLite
+      const settings = await getBusinessSettings();
+      const userData = await getUserData();
+
+      setBusinessInfo({
+        name: settings?.business_name || userData?.business_name || 'My Business',
+        address: settings?.business_address || 'Not set',
+        phone: settings?.business_phone || 'Not set',
+        email: settings?.business_email || 'Not set',
+
+      });
+    } catch (error) {
+      console.error('Failed to load business data:', error);
+      Alert.alert('Error', 'Failed to load business information');
+      // Set fallback values
+      setBusinessInfo({
+        name: 'My Business',
+        address: 'Not set',
+        phone: 'Not set',
+        email: 'Not set',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleBack = () => {
     navigation.goBack();
@@ -88,6 +134,14 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
   const handleBillFormat = () => {
     navigation.navigate('BillFormat');
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#C62828" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -142,22 +196,22 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
 
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Business Name</Text>
-            <Text style={styles.infoValue}>Saravaan's Tiffen Centre</Text>
+            <Text style={styles.infoValue}>{businessInfo.name}</Text>
           </View>
 
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Address</Text>
-            <Text style={styles.infoValue}>123, Main Street, Tamil Nadu</Text>
+            <Text style={styles.infoValue}>{businessInfo.address}</Text>
           </View>
 
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Phone Number</Text>
-            <Text style={styles.infoValue}>1234567890</Text>
+            <Text style={styles.infoValue}>{businessInfo.phone}</Text>
           </View>
 
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Email ID</Text>
-            <Text style={styles.infoValue}>business@example.com</Text>
+            <Text style={styles.infoValue}>{businessInfo.email}</Text>
           </View>
         </Animated.View>
 
@@ -389,6 +443,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     flexDirection: 'row',

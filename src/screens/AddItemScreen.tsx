@@ -9,29 +9,37 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/business.types';
+import { getCategories, createItem } from '../services/storage';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 
 type AddItemScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'AddItem'>;
 };
 
-const CATEGORIES = ['Rice & Dosa', 'Chapati & Curry', 'Tea & Coffee', 'Ice Cream'];
-
 const AddItemScreen: React.FC<AddItemScreenProps> = ({ navigation }) => {
   const [itemName, setItemName] = useState('');
   const [price, setPrice] = useState('');
-  const [category, setCategory] = useState(CATEGORIES[0]);
+  const [category, setCategory] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [categories, setCategories] = useState<any[]>([]);
   const [imageUrl, setImageUrl] = useState('');
+  const [imagePath, setImagePath] = useState('');
   const [useGlobalGST, setUseGlobalGST] = useState(true);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Animations
   const headerAnim = useRef(new Animated.Value(0)).current;
   const formAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    loadCategories();
+    
     Animated.stagger(100, [
       Animated.timing(headerAnim, {
         toValue: 1,
@@ -46,7 +54,24 @@ const AddItemScreen: React.FC<AddItemScreenProps> = ({ navigation }) => {
     ]).start();
   }, []);
 
-  const handleSave = () => {
+  const loadCategories = async () => {
+    try {
+      const result = await getCategories();
+      setCategories(result);
+      
+      if (result.length > 0) {
+        setCategory(result[0].name);
+        setCategoryId(result[0].id);
+      }
+    } catch (error) {
+      console.error('Failed to load categories:', error);
+      Alert.alert('Error', 'Failed to load categories');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
     if (!itemName.trim()) {
       Alert.alert('Error', 'Please enter item name');
       return;
@@ -57,19 +82,38 @@ const AddItemScreen: React.FC<AddItemScreenProps> = ({ navigation }) => {
       return;
     }
 
-    // Save logic here
-    console.log('Adding item:', { itemName, price, category, imageUrl, useGlobalGST });
-    
-    Alert.alert(
-      'Success',
-      'Item added successfully!',
-      [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]
-    );
+    if (!categoryId) {
+      Alert.alert('Error', 'Please select a category');
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      await createItem({
+        name: itemName.trim(),
+        price: parseFloat(price),
+        category_ids: [categoryId],
+        image_path: imagePath || undefined,
+        image_url: imageUrl || undefined,
+      });
+
+      Alert.alert(
+        'Success',
+        'Item added successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Failed to add item:', error);
+      Alert.alert('Error', 'Failed to add item. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleImageUpload = () => {
@@ -77,12 +121,76 @@ const AddItemScreen: React.FC<AddItemScreenProps> = ({ navigation }) => {
       'Upload Image',
       'Choose upload method',
       [
-        { text: 'Camera', onPress: () => console.log('Open camera') },
-        { text: 'Gallery', onPress: () => console.log('Open gallery') },
-        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Camera', 
+          onPress: () => openCamera() 
+        },
+        { 
+          text: 'Gallery', 
+          onPress: () => openGallery() 
+        },
+        { 
+          text: 'Cancel', 
+          style: 'cancel' 
+        },
       ]
     );
   };
+
+  const openCamera = () => {
+    launchCamera(
+      {
+        mediaType: 'photo',
+        saveToPhotos: true,
+        quality: 0.8,
+      },
+      (response) => {
+        if (response.didCancel) {
+          return;
+        }
+        if (response.errorCode) {
+          Alert.alert('Error', 'Failed to open camera');
+          return;
+        }
+        if (response.assets && response.assets[0]) {
+          const asset = response.assets[0];
+          setImagePath(asset.uri || '');
+          setImageUrl(''); // Clear URL if file is selected
+        }
+      }
+    );
+  };
+
+  const openGallery = () => {
+    launchImageLibrary(
+      {
+        mediaType: 'photo',
+        quality: 0.8,
+      },
+      (response) => {
+        if (response.didCancel) {
+          return;
+        }
+        if (response.errorCode) {
+          Alert.alert('Error', 'Failed to open gallery');
+          return;
+        }
+        if (response.assets && response.assets[0]) {
+          const asset = response.assets[0];
+          setImagePath(asset.uri || '');
+          setImageUrl(''); // Clear URL if file is selected
+        }
+      }
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#C62828" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -146,8 +254,12 @@ const AddItemScreen: React.FC<AddItemScreenProps> = ({ navigation }) => {
                   <View style={styles.cameraBody} />
                   <View style={styles.cameraLens} />
                 </View>
-                <Text style={styles.uploadText}>Upload Item Image</Text>
-                <Text style={styles.browseText}>Tap to browse files</Text>
+                <Text style={styles.uploadText}>
+                  {imagePath ? 'Image Selected' : 'Upload Item Image'}
+                </Text>
+                <Text style={styles.browseText}>
+                  {imagePath ? 'Tap to change' : 'Tap to browse files'}
+                </Text>
               </View>
               
               {/* URL Input */}
@@ -156,7 +268,10 @@ const AddItemScreen: React.FC<AddItemScreenProps> = ({ navigation }) => {
                 placeholder="Or paste image URL"
                 placeholderTextColor="#999999"
                 value={imageUrl}
-                onChangeText={setImageUrl}
+                onChangeText={(text) => {
+                  setImageUrl(text);
+                  if (text) setImagePath(''); // Clear file if URL is entered
+                }}
               />
             </TouchableOpacity>
           </View>
@@ -196,21 +311,24 @@ const AddItemScreen: React.FC<AddItemScreenProps> = ({ navigation }) => {
               style={styles.dropdown}
               onPress={() => setShowCategoryDropdown(!showCategoryDropdown)}
             >
-              <Text style={styles.dropdownText}>{category}</Text>
+              <Text style={styles.dropdownText}>
+                {category || 'Select Category'}
+              </Text>
               <Text style={styles.dropdownArrow}>▼</Text>
             </TouchableOpacity>
             {showCategoryDropdown && (
               <View style={styles.dropdownMenu}>
-                {CATEGORIES.map((cat) => (
+                {categories.map((cat) => (
                   <TouchableOpacity
-                    key={cat}
+                    key={cat.id}
                     style={styles.dropdownItem}
                     onPress={() => {
-                      setCategory(cat);
+                      setCategory(cat.name);
+                      setCategoryId(cat.id);
                       setShowCategoryDropdown(false);
                     }}
                   >
-                    <Text style={styles.dropdownItemText}>{cat}</Text>
+                    <Text style={styles.dropdownItemText}>{cat.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -261,8 +379,16 @@ const AddItemScreen: React.FC<AddItemScreenProps> = ({ navigation }) => {
 
       {/* Footer - Save Button */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Add Item</Text>
+        <TouchableOpacity 
+          style={[styles.saveButton, isSaving && styles.saveButtonDisabled]} 
+          onPress={handleSave}
+          disabled={isSaving}
+        >
+          {isSaving ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.saveButtonText}>Add Item</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -273,6 +399,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     backgroundColor: '#FFFFFF',
@@ -565,6 +695,9 @@ const styles = StyleSheet.create({
     borderRadius: 16.4,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   saveButtonText: {
     fontSize: 16,

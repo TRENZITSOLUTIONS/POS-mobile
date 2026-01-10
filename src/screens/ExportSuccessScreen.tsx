@@ -24,6 +24,8 @@ const ExportSuccessScreen: React.FC<ExportSuccessScreenProps> = ({
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const checkmarkAnim = useRef(new Animated.Value(0)).current;
 
+  const { exportType, billCount, exportData, dateRange } = route.params;
+
   useEffect(() => {
     Animated.sequence([
       Animated.parallel([
@@ -50,6 +52,59 @@ const ExportSuccessScreen: React.FC<ExportSuccessScreenProps> = ({
 
   const handleTap = () => {
     navigation.navigate('BackupData');
+  };
+
+  // Format export type for display
+  const getExportTypeDisplay = () => {
+    switch (exportType) {
+      case 'all':
+        return 'All Bills';
+      case 'today':
+        return "Today's Bills";
+      case 'dateRange':
+        return 'Date Range';
+      default:
+        return 'Bills';
+    }
+  };
+
+  // Format date range for display
+  const getDateRangeDisplay = () => {
+    if (!dateRange) return 'N/A';
+    
+    const start = new Date(dateRange.start);
+    const end = new Date(dateRange.end);
+    
+    const formatDate = (date: Date) => {
+      return date.toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+    };
+
+    if (start.toDateString() === end.toDateString()) {
+      return formatDate(start);
+    }
+    
+    return `${formatDate(start)} - ${formatDate(end)}`;
+  };
+
+  // Calculate estimated file size based on data
+  const getEstimatedFileSize = () => {
+    if (!exportData || exportData.length === 0) {
+      return '0 KB';
+    }
+
+    // Estimate: ~1 KB per bill for CSV format
+    const estimatedKB = exportData.length * 1;
+    
+    if (estimatedKB < 1024) {
+      return `${estimatedKB} KB`;
+    } else {
+      const estimatedMB = (estimatedKB / 1024).toFixed(1);
+      return `${estimatedMB} MB`;
+    }
   };
 
   // Get current time
@@ -93,18 +148,39 @@ const ExportSuccessScreen: React.FC<ExportSuccessScreenProps> = ({
           <Text style={styles.title}>Export Successful</Text>
 
           {/* Success Message */}
-          <Text style={styles.message}>Bill has been exported successfully</Text>
+          <Text style={styles.message}>
+            {billCount !== undefined
+              ? `${billCount} bill${billCount !== 1 ? 's' : ''} exported successfully`
+              : 'Bills exported successfully'}
+          </Text>
 
           {/* Export Details Card */}
           <View style={styles.detailsCard}>
             <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Export Type:</Text>
+              <Text style={styles.detailValue}>{getExportTypeDisplay()}</Text>
+            </View>
+
+            {billCount !== undefined && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Bills Exported:</Text>
+                <Text style={styles.detailValue}>{billCount}</Text>
+              </View>
+            )}
+
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Date Range:</Text>
+              <Text style={styles.detailValue}>{getDateRangeDisplay()}</Text>
+            </View>
+
+            <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Format:</Text>
-              <Text style={styles.detailValue}>PDF</Text>
+              <Text style={styles.detailValue}>CSV</Text>
             </View>
 
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Size:</Text>
-              <Text style={styles.detailValue}>245 KB</Text>
+              <Text style={styles.detailValue}>{getEstimatedFileSize()}</Text>
             </View>
 
             <View style={styles.detailRow}>

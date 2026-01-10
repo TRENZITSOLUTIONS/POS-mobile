@@ -12,37 +12,72 @@ import {
   Switch,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/business.types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type BillNumberingScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BillNumbering'>;
 };
+
+interface BillNumberingSettings {
+  prefix: string;
+  startingNumber: string;
+  includeDate: boolean;
+  currentNumber?: number; // Track the last used number
+}
 
 const BillNumberingScreen: React.FC<BillNumberingScreenProps> = ({ navigation }) => {
   const [prefix, setPrefix] = useState('INV-');
   const [startingNumber, setStartingNumber] = useState('1001');
   const [includeDate, setIncludeDate] = useState(true);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    loadSettings();
   }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isLoading]);
+
+  const loadSettings = async () => {
+    try {
+      const settingsJson = await AsyncStorage.getItem('bill_numbering');
+      
+      if (settingsJson) {
+        const settings: BillNumberingSettings = JSON.parse(settingsJson);
+        setPrefix(settings.prefix || 'INV-');
+        setStartingNumber(settings.startingNumber || '1001');
+        setIncludeDate(settings.includeDate !== undefined ? settings.includeDate : true);
+      }
+    } catch (error) {
+      console.error('Failed to load bill numbering settings:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const generatePreview = () => {
     const today = new Date();
@@ -59,18 +94,64 @@ const BillNumberingScreen: React.FC<BillNumberingScreenProps> = ({ navigation })
   };
 
   const handleApplyNumbering = () => {
+    // Validate inputs
+    if (!prefix.trim()) {
+      Alert.alert('Invalid Prefix', 'Please enter a valid prefix.');
+      return;
+    }
+
+    if (!startingNumber.trim() || isNaN(Number(startingNumber))) {
+      Alert.alert('Invalid Number', 'Please enter a valid starting number.');
+      return;
+    }
+
     setConfirmModalVisible(true);
   };
 
   const handleConfirmApply = async () => {
     setConfirmModalVisible(false);
-    // Save numbering settings here (AsyncStorage or API)
-    // await AsyncStorage.setItem('bill_numbering', JSON.stringify({ prefix, startingNumber, includeDate }));
+    setIsSaving(true);
+
+    try {
+      const settings: BillNumberingSettings = {
+        prefix: prefix.trim(),
+        startingNumber: startingNumber.trim(),
+        includeDate,
+        currentNumber: parseInt(startingNumber, 10), // Initialize current number
+      };
+
+      await AsyncStorage.setItem('bill_numbering', JSON.stringify(settings));
+
+      // Show success message
+      Alert.alert(
+        'Settings Saved',
+        'Bill numbering settings have been applied successfully.',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Failed to save bill numbering settings:', error);
+      Alert.alert('Error', 'Failed to save settings. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancelConfirm = () => {
     setConfirmModalVisible(false);
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#C62828" />
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -217,11 +298,16 @@ const BillNumberingScreen: React.FC<BillNumberingScreenProps> = ({ navigation })
           ]}
         >
           <TouchableOpacity
-            style={styles.applyButton}
+            style={[styles.applyButton, isSaving && styles.applyButtonDisabled]}
             onPress={handleApplyNumbering}
             activeOpacity={0.9}
+            disabled={isSaving}
           >
-            <Text style={styles.applyButtonText}>Apply Numbering</Text>
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.applyButtonText}>Apply Numbering</Text>
+            )}
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
@@ -236,6 +322,14 @@ const BillNumberingScreen: React.FC<BillNumberingScreenProps> = ({ navigation })
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Confirm Bill Numbering</Text>
+            <Text style={styles.modalMessage}>
+              Are you sure you want to apply these bill numbering settings?
+            </Text>
+
+            <View style={styles.modalPreview}>
+              <Text style={styles.modalPreviewLabel}>New format:</Text>
+              <Text style={styles.modalPreviewNumber}>{generatePreview()}</Text>
+            </View>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -265,6 +359,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   scrollContent: {
     padding: 20,
@@ -417,6 +515,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  applyButtonDisabled: {
+    opacity: 0.5,
+  },
   applyButtonText: {
     fontSize: 16,
     fontWeight: '600',
@@ -443,7 +544,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 25,
     elevation: 20,
-    gap: 12,
+    gap: 16,
   },
   modalTitle: {
     fontSize: 22,
@@ -452,6 +553,31 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: -0.26,
     lineHeight: 33,
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    letterSpacing: -0.31,
+    lineHeight: 24,
+  },
+  modalPreview: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 10,
+    padding: 16,
+    alignItems: 'center',
+    gap: 4,
+  },
+  modalPreviewLabel: {
+    fontSize: 14,
+    color: '#999999',
+    letterSpacing: -0.15,
+  },
+  modalPreviewNumber: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#C62828',
+    letterSpacing: -0.44,
   },
   modalButtons: {
     gap: 12,

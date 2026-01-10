@@ -6,10 +6,12 @@ import {
   StatusBar,
   Animated,
   Easing,
+  Alert,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types/business.types';
+import { getBills } from '../services/storage';
 
 type ExportingBillsScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ExportingBills'>;
@@ -21,10 +23,11 @@ const ExportingBillsScreen: React.FC<ExportingBillsScreenProps> = ({
   route,
 }) => {
   const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState('Loading bills...');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
 
-  const { exportType, customDays, billData } = route.params;
+  const { exportType, customDays } = route.params;
 
   useEffect(() => {
     // Fade in animation
@@ -44,26 +47,115 @@ const ExportingBillsScreen: React.FC<ExportingBillsScreenProps> = ({
       })
     ).start();
 
-    // Progress animation
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          // Navigate to success screen after reaching 100%
-          setTimeout(() => {
-            navigation.replace('ExportSuccess', {
-              exportType,
-              billData,
-            });
-          }, 500);
-          return 100;
-        }
-        return prev + 10; // Increment by 10% every 200ms
-      });
-    }, 200);
-
-    return () => clearInterval(interval);
+    // Start real export process
+    performExport();
   }, []);
+
+  const performExport = async () => {
+    try {
+      // Step 1: Calculate date range (15%)
+      setProgress(15);
+      setStatusText('Calculating date range...');
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 300));
+      
+      const dateRange = calculateDateRange(exportType, customDays);
+
+      // Step 2: Load bills from database (40%)
+      setProgress(40);
+      setStatusText('Loading bills from database...');
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 300));
+      
+      const allBills = await getBills();
+
+      // Step 3: Filter bills (60%)
+      setProgress(60);
+      setStatusText('Filtering bills...');
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 300));
+      
+      const filteredBills = allBills.filter(bill => {
+        const billDate = new Date(bill.created_at);
+        return billDate >= dateRange.start && billDate <= dateRange.end;
+      });
+
+      // Step 4: Format data (80%)
+      setProgress(80);
+      setStatusText('Formatting export data...');
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 300));
+      
+      const exportData = formatBillsForExport(filteredBills);
+
+      // Step 5: Complete (100%)
+      setProgress(100);
+      setStatusText('Export complete!');
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
+
+      // Navigate to success screen with real data
+      navigation.replace('ExportSuccess', {
+        exportType,
+        billCount: filteredBills.length,
+        exportData, // Real formatted data
+        dateRange: {
+          start: dateRange.start.toISOString(),
+          end: dateRange.end.toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('Failed to export bills:', error);
+      Alert.alert(
+        'Export Failed',
+        'Failed to export bills. Please try again.',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
+    }
+  };
+
+  const calculateDateRange = (type: string, days?: string) => {
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    
+    let start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    switch (type) {
+      case 'today':
+        // Start: Today 00:00, End: Today 23:59
+        break;
+      case 'dateRange':
+        // Custom days
+        if (days) {
+          const numDays = parseInt(days, 10);
+          start.setDate(start.getDate() - numDays);
+        }
+        break;
+      case 'all':
+      default:
+        // All time - set start to very old date
+        start = new Date('2020-01-01');
+        break;
+    }
+
+    return { start, end };
+  };
+
+  const formatBillsForExport = (bills: any[]) => {
+    // Format bills into CSV-style data
+    return bills.map(bill => ({
+      bill_number: bill.bill_number,
+      date: new Date(bill.created_at).toLocaleDateString('en-IN'),
+      time: new Date(bill.created_at).toLocaleTimeString('en-IN'),
+      items: JSON.parse(bill.items || '[]').length,
+      subtotal: bill.subtotal.toFixed(2),
+      tax: bill.tax_amount.toFixed(2),
+      discount: bill.discount_amount.toFixed(2),
+      total: bill.total_amount.toFixed(2),
+      payment_method: bill.payment_method || 'Cash',
+    }));
+  };
 
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -89,7 +181,7 @@ const ExportingBillsScreen: React.FC<ExportingBillsScreenProps> = ({
         </View>
 
         {/* Status Text */}
-        <Text style={styles.statusTitle}>Exporting bill...</Text>
+        <Text style={styles.statusTitle}>{statusText}</Text>
         <Text style={styles.statusSubtext}>Preparing export file and formatting data</Text>
       </Animated.View>
     </View>

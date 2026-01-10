@@ -7,9 +7,13 @@ import {
   Animated,
   TouchableOpacity,
   ScrollView,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../types/business.types';
+import { getNextBillNumber } from '../utils/billNumbering';
+import { saveBill } from '../services/storage';
 
 type CheckoutScreenProps = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
 
@@ -17,6 +21,7 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({navigation, route}) => {
   const {cart} = route.params;
   const [discountAmount, setDiscountAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI'>('Cash');
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const headerTranslateY = useRef(new Animated.Value(-20)).current;
@@ -138,18 +143,63 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({navigation, route}) => {
     return subtotal - discount + gst;
   };
 
-  const handleGenerateBill = () => {
-    const billData = {
-      cart,
-      subtotal: calculateSubtotal(),
-      discount: parseFloat(discountAmount) || 0,
-      gst: calculateGST(),
-      total: calculateTotal(),
-      paymentMethod,
-      billNumber: `BILL-${Math.floor(Math.random() * 1000000)}`,
-      timestamp: new Date().toISOString(),
-    };
-    navigation.navigate('BillSuccess', billData);
+  const handleGenerateBill = async () => {
+    if (isGenerating) return;
+
+    try {
+      setIsGenerating(true);
+
+      // Get next bill number from the numbering system
+      const billNumber = await getNextBillNumber();
+      
+      const subtotal = calculateSubtotal();
+      const discount = parseFloat(discountAmount) || 0;
+      const gst = calculateGST();
+      const total = calculateTotal();
+      const timestamp = new Date().toISOString();
+
+      // Create bill object for database
+      const bill = {
+        bill_number: billNumber,
+        items: JSON.stringify(cart), // Store cart items as JSON
+        subtotal: subtotal,
+        tax_amount: gst,
+        discount_amount: discount,
+        total_amount: total,
+        payment_method: paymentMethod,
+        customer_name: '', // Can be added as optional field
+        customer_phone: '', // Can be added as optional field
+        notes: '',
+        created_at: timestamp,
+      };
+
+      // Save bill to database
+      await saveBill(bill);
+      
+      console.log('Bill saved successfully:', billNumber);
+
+      // Navigate to success screen with bill data
+      navigation.navigate('BillSuccess', {
+        cart,
+        subtotal,
+        discount,
+        gst,
+        total,
+        paymentMethod,
+        billNumber,
+        timestamp,
+      });
+
+    } catch (error) {
+      console.error('Failed to generate bill:', error);
+      Alert.alert(
+        'Error',
+        'Failed to generate bill. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleBack = () => {
@@ -212,6 +262,7 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({navigation, route}) => {
             value={discountAmount}
             onChangeText={setDiscountAmount}
             keyboardType="decimal-pad"
+            editable={!isGenerating}
           />
         </Animated.View>
 
@@ -231,7 +282,8 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({navigation, route}) => {
                 styles.paymentButton,
                 paymentMethod === 'Cash' && styles.paymentButtonActive,
               ]}
-              onPress={() => setPaymentMethod('Cash')}>
+              onPress={() => setPaymentMethod('Cash')}
+              disabled={isGenerating}>
               <Text
                 style={[
                   styles.paymentText,
@@ -245,7 +297,8 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({navigation, route}) => {
                 styles.paymentButton,
                 paymentMethod === 'UPI' && styles.paymentButtonActive,
               ]}
-              onPress={() => setPaymentMethod('UPI')}>
+              onPress={() => setPaymentMethod('UPI')}
+              disabled={isGenerating}>
               <Text
                 style={[
                   styles.paymentText,
@@ -290,8 +343,15 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({navigation, route}) => {
 
       {/* Generate Bill Button */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.generateButton} onPress={handleGenerateBill}>
-          <Text style={styles.generateText}>Generate Bill</Text>
+        <TouchableOpacity 
+          style={[styles.generateButton, isGenerating && styles.generateButtonDisabled]} 
+          onPress={handleGenerateBill}
+          disabled={isGenerating}>
+          {isGenerating ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.generateText}>Generate Bill</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -449,6 +509,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  generateButtonDisabled: {
+    opacity: 0.6,
   },
   generateText: {
     fontSize: 16,

@@ -11,9 +11,12 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/business.types';
+import { getBusinessSettings, saveBusinessSettings } from '../services/storage';
 
 type BusinessDetailsScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BusinessDetails'>;
@@ -28,45 +31,136 @@ interface BusinessData {
 
 const BusinessDetailsScreen: React.FC<BusinessDetailsScreenProps> = ({ navigation }) => {
   const [businessData, setBusinessData] = useState<BusinessData>({
-    shopName: "Saravanaan's Tiffen Centre",
-    address: '123, Main Street, Tamil Nadu',
-    phoneNumber: '1234567890',
-    emailId: 'business@example.com',
+    shopName: '',
+    address: '',
+    phoneNumber: '',
+    emailId: '',
   });
 
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    loadBusinessData();
   }, []);
 
+  useEffect(() => {
+    if (!isLoading) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isLoading]);
+
+  const loadBusinessData = async () => {
+    try {
+      const settings = await getBusinessSettings();
+      
+      setBusinessData({
+        shopName: settings.business_name || '',
+        address: settings.business_address || '',
+        phoneNumber: settings.business_phone || '',
+        emailId: settings.business_email || '',
+      });
+    } catch (error) {
+      console.error('Failed to load business data:', error);
+      Alert.alert('Error', 'Failed to load business details. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleApplyChanges = () => {
+    // Validate required fields
+    if (!businessData.shopName.trim()) {
+      Alert.alert('Missing Information', 'Please enter your shop name.');
+      return;
+    }
+
+    if (!businessData.address.trim()) {
+      Alert.alert('Missing Information', 'Please enter your business address.');
+      return;
+    }
+
+    if (!businessData.phoneNumber.trim()) {
+      Alert.alert('Missing Information', 'Please enter your phone number.');
+      return;
+    }
+
+    // Validate phone number (basic check)
+    if (businessData.phoneNumber.length < 10) {
+      Alert.alert('Invalid Phone Number', 'Please enter a valid phone number.');
+      return;
+    }
+
+    // Validate email if provided
+    if (businessData.emailId.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(businessData.emailId)) {
+        Alert.alert('Invalid Email', 'Please enter a valid email address.');
+        return;
+      }
+    }
+
     setConfirmModalVisible(true);
   };
 
-  const handleConfirmApply = () => {
-    // Save the changes here
+  const handleConfirmApply = async () => {
     setConfirmModalVisible(false);
-    navigation.goBack();
+    setIsSaving(true);
+
+    try {
+      // Save to database
+      await saveBusinessSettings({
+        business_name: businessData.shopName.trim(),
+        business_address: businessData.address.trim(),
+        business_phone: businessData.phoneNumber.trim(),
+        business_email: businessData.emailId.trim(),
+      });
+
+      Alert.alert(
+        'Success',
+        'Business details have been updated successfully.',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Failed to save business data:', error);
+      Alert.alert('Error', 'Failed to save changes. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancelConfirm = () => {
     setConfirmModalVisible(false);
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#C62828" />
+        <Text style={styles.loadingText}>Loading business details...</Text>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -78,6 +172,7 @@ const BusinessDetailsScreen: React.FC<BusinessDetailsScreenProps> = ({ navigatio
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
       >
         {/* Header */}
         <Animated.View
@@ -132,6 +227,7 @@ const BusinessDetailsScreen: React.FC<BusinessDetailsScreenProps> = ({ navigatio
               }
               placeholder="Enter shop name"
               placeholderTextColor="#999999"
+              editable={!isSaving}
             />
           </View>
 
@@ -149,6 +245,7 @@ const BusinessDetailsScreen: React.FC<BusinessDetailsScreenProps> = ({ navigatio
               multiline
               numberOfLines={3}
               textAlignVertical="top"
+              editable={!isSaving}
             />
           </View>
 
@@ -164,6 +261,8 @@ const BusinessDetailsScreen: React.FC<BusinessDetailsScreenProps> = ({ navigatio
               placeholder="Enter phone number"
               placeholderTextColor="#999999"
               keyboardType="phone-pad"
+              maxLength={15}
+              editable={!isSaving}
             />
           </View>
 
@@ -183,6 +282,7 @@ const BusinessDetailsScreen: React.FC<BusinessDetailsScreenProps> = ({ navigatio
               placeholderTextColor="#999999"
               keyboardType="email-address"
               autoCapitalize="none"
+              editable={!isSaving}
             />
           </View>
         </Animated.View>
@@ -197,11 +297,16 @@ const BusinessDetailsScreen: React.FC<BusinessDetailsScreenProps> = ({ navigatio
           ]}
         >
           <TouchableOpacity
-            style={styles.applyButton}
+            style={[styles.applyButton, isSaving && styles.applyButtonDisabled]}
             onPress={handleApplyChanges}
             activeOpacity={0.9}
+            disabled={isSaving}
           >
-            <Text style={styles.applyButtonText}>Apply Changes</Text>
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.applyButtonText}>Apply Changes</Text>
+            )}
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
@@ -216,6 +321,19 @@ const BusinessDetailsScreen: React.FC<BusinessDetailsScreenProps> = ({ navigatio
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Confirm Business Details</Text>
+            <Text style={styles.modalMessage}>
+              Are you sure you want to save these changes? These details will appear on all your bills.
+            </Text>
+
+            {/* Preview */}
+            <View style={styles.previewCard}>
+              <Text style={styles.previewTitle}>{businessData.shopName}</Text>
+              <Text style={styles.previewText}>{businessData.address}</Text>
+              <Text style={styles.previewText}>{businessData.phoneNumber}</Text>
+              {businessData.emailId ? (
+                <Text style={styles.previewText}>{businessData.emailId}</Text>
+              ) : null}
+            </View>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -245,6 +363,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666666',
   },
   scrollContent: {
     padding: 20,
@@ -334,6 +461,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  applyButtonDisabled: {
+    opacity: 0.5,
+  },
   applyButtonText: {
     fontSize: 16,
     fontWeight: '600',
@@ -360,6 +490,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 25,
     elevation: 20,
+    gap: 16,
   },
   modalTitle: {
     fontSize: 22,
@@ -368,7 +499,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: -0.26,
     lineHeight: 33,
-    marginBottom: 24,
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    letterSpacing: -0.31,
+    lineHeight: 24,
+  },
+  previewCard: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 10,
+    padding: 16,
+    gap: 4,
+  },
+  previewTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 4,
+  },
+  previewText: {
+    fontSize: 14,
+    color: '#666666',
+    lineHeight: 20,
   },
   modalButtons: {
     gap: 12,

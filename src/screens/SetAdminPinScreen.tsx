@@ -8,109 +8,34 @@ import {
   StatusBar,
   TextInput,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import LockIcon from '../assets/icons/LockIcon.svg';
 import { RootStackParamList } from '../types/business.types';
-import { getBusinessSettings } from '../services/storage';
+import { getBusinessSettings, saveBusinessSettings } from '../services/storage';
 import CryptoJS from 'crypto-js';
 
-type AdminPinScreenProps = {
-  navigation: NativeStackNavigationProp<RootStackParamList, 'AdminPin'>;
+type SetAdminPinScreenProps = {
+  navigation: NativeStackNavigationProp<RootStackParamList, 'SetAdminPin'>;
 };
 
-const AdminPinScreen: React.FC<AdminPinScreenProps> = ({ navigation }) => {
+const SetAdminPinScreen: React.FC<SetAdminPinScreenProps> = ({ navigation }) => {
   const [pin, setPin] = useState('');
-  const [error, setError] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isVerifying, setIsVerifying] = useState(false);
+  const [confirmPin, setConfirmPin] = useState('');
+  const [step, setStep] = useState<'enter' | 'confirm'>('enter');
+  const [error, setError] = useState('');
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    checkPinExists();
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
   }, []);
-
-  useEffect(() => {
-    if (!isLoading) {
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [isLoading]);
-
-  const checkPinExists = async () => {
-    try {
-      const settings = await getBusinessSettings();
-      
-      // If no PIN is set, navigate to SetAdminPin
-      if (!settings?.admin_pin) {
-        navigation.replace('SetAdminPin');
-        return;
-      }
-      
-      setIsLoading(false);
-    } catch (error) {
-      console.error('Failed to check PIN:', error);
-      Alert.alert('Error', 'Failed to load admin settings');
-      navigation.goBack();
-    }
-  };
-
-  const hashPin = (pinToHash: string): string => {
-    return CryptoJS.SHA256(pinToHash).toString();
-  };
-
-  const verifyPin = async (enteredPin: string): Promise<boolean> => {
-    try {
-      const settings = await getBusinessSettings();
-      
-      if (!settings?.admin_pin) {
-        return false;
-      }
-      
-      const hashedEnteredPin = hashPin(enteredPin);
-      return hashedEnteredPin === settings.admin_pin;
-    } catch (error) {
-      console.error('Failed to verify PIN:', error);
-      return false;
-    }
-  };
-
-  const handleVerify = async () => {
-    if (pin.length !== 4) {
-      setError(true);
-      shakeAnimation();
-      return;
-    }
-
-    setIsVerifying(true);
-
-    try {
-      const isValid = await verifyPin(pin);
-      
-      if (isValid) {
-        navigation.replace('AdminDashboard');
-      } else {
-        setError(true);
-        shakeAnimation();
-        setPin('');
-        setTimeout(() => {
-          setError(false);
-        }, 1000);
-      }
-    } catch (error) {
-      console.error('Verification error:', error);
-      Alert.alert('Error', 'Failed to verify PIN');
-    } finally {
-      setIsVerifying(false);
-    }
-  };
 
   const shakeAnimation = () => {
     Animated.sequence([
@@ -137,17 +62,83 @@ const AdminPinScreen: React.FC<AdminPinScreenProps> = ({ navigation }) => {
     ]).start();
   };
 
-  const handleBack = () => {
-    navigation.goBack();
+  const hashPin = (pinToHash: string): string => {
+    return CryptoJS.SHA256(pinToHash).toString();
   };
 
-  if (isLoading) {
-    return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color="#C62828" />
-      </View>
-    );
-  }
+  const handleContinue = () => {
+    if (step === 'enter') {
+      // Validate PIN
+      if (pin.length !== 4) {
+        setError('PIN must be 4 digits');
+        shakeAnimation();
+        return;
+      }
+
+      if (!/^\d{4}$/.test(pin)) {
+        setError('PIN must contain only numbers');
+        shakeAnimation();
+        return;
+      }
+
+      // Move to confirm step
+      setStep('confirm');
+      setError('');
+    } else {
+      // Confirm step
+      if (confirmPin !== pin) {
+        setError('PINs do not match');
+        shakeAnimation();
+        setConfirmPin('');
+        return;
+      }
+
+      // Save PIN
+      savePin();
+    }
+  };
+
+  const savePin = async () => {
+    try {
+      const hashedPin = hashPin(pin);
+      
+      // Get existing settings
+      const settings = await getBusinessSettings();
+      
+      // Save PIN to business settings
+      await saveBusinessSettings({
+        ...settings,
+        admin_pin: hashedPin,
+      });
+
+      Alert.alert(
+        'Success',
+        'Admin PIN has been set successfully',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.replace('AdminDashboard'),
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Failed to save PIN:', error);
+      Alert.alert('Error', 'Failed to save PIN. Please try again.');
+    }
+  };
+
+  const handleBack = () => {
+    if (step === 'confirm') {
+      setStep('enter');
+      setConfirmPin('');
+      setError('');
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  const currentPin = step === 'enter' ? pin : confirmPin;
+  const setCurrentPin = step === 'enter' ? setPin : setConfirmPin;
 
   return (
     <View style={styles.container}>
@@ -178,8 +169,14 @@ const AdminPinScreen: React.FC<AdminPinScreenProps> = ({ navigation }) => {
         </View>
 
         {/* Title */}
-        <Text style={styles.title}>Admin Verification</Text>
-        <Text style={styles.subtitle}>Enter your admin PIN to continue</Text>
+        <Text style={styles.title}>
+          {step === 'enter' ? 'Set Admin PIN' : 'Confirm Admin PIN'}
+        </Text>
+        <Text style={styles.subtitle}>
+          {step === 'enter' 
+            ? 'Create a 4-digit PIN to secure admin access' 
+            : 'Re-enter your PIN to confirm'}
+        </Text>
 
         {/* Card */}
         <Animated.View
@@ -192,39 +189,42 @@ const AdminPinScreen: React.FC<AdminPinScreenProps> = ({ navigation }) => {
         >
           {/* Input */}
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>Admin PIN</Text>
+            <Text style={styles.label}>
+              {step === 'enter' ? 'Enter PIN' : 'Confirm PIN'}
+            </Text>
             <TextInput
-              style={[styles.input, error && styles.inputError]}
-              placeholder="Enter PIN"
+              style={[styles.input, error ? styles.inputError : null]}
+              placeholder="Enter 4-digit PIN"
               placeholderTextColor="#999999"
-              value={pin}
+              value={currentPin}
               onChangeText={(text) => {
-                setPin(text);
-                setError(false);
+                setCurrentPin(text);
+                setError('');
               }}
               keyboardType="number-pad"
               maxLength={4}
               secureTextEntry
-              editable={!isVerifying}
             />
-            {error && (
-              <Text style={styles.errorText}>Incorrect PIN. Please try again.</Text>
-            )}
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
           </View>
 
-          {/* Verify Button */}
+          {/* Continue Button */}
           <TouchableOpacity
-            style={[styles.verifyButton, isVerifying && styles.verifyButtonDisabled]}
-            onPress={handleVerify}
+            style={styles.continueButton}
+            onPress={handleContinue}
             activeOpacity={0.9}
-            disabled={isVerifying}
           >
-            {isVerifying ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.verifyButtonText}>Verify</Text>
-            )}
+            <Text style={styles.continueButtonText}>
+              {step === 'enter' ? 'Continue' : 'Set PIN'}
+            </Text>
           </TouchableOpacity>
+
+          {/* Info Text */}
+          <Text style={styles.infoText}>
+            {step === 'enter' 
+              ? 'Choose a PIN you can remember easily' 
+              : 'Make sure both PINs match'}
+          </Text>
         </Animated.View>
       </Animated.View>
     </View>
@@ -235,10 +235,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F2F2F2',
-  },
-  loadingContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   content: {
     flex: 1,
@@ -287,6 +283,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 32,
     letterSpacing: -0.3125,
+    paddingHorizontal: 20,
   },
   card: {
     backgroundColor: '#FFFFFF',
@@ -299,7 +296,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   inputContainer: {
-    marginBottom: 32,
+    marginBottom: 24,
   },
   label: {
     fontSize: 14,
@@ -328,27 +325,32 @@ const styles = StyleSheet.create({
     marginTop: 8,
     letterSpacing: -0.0761719,
   },
-  verifyButton: {
+  continueButton: {
     backgroundColor: '#C62828',
     borderRadius: 16,
     height: 56,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 6,
     elevation: 4,
   },
-  verifyButtonDisabled: {
-    opacity: 0.6,
-  },
-  verifyButtonText: {
+  continueButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
     letterSpacing: -0.3125,
   },
+  infoText: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: '#666666',
+    textAlign: 'center',
+    letterSpacing: -0.0761719,
+  },
 });
 
-export default AdminPinScreen;
+export default SetAdminPinScreen;
