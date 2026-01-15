@@ -90,17 +90,20 @@ const AddItemScreen: React.FC<AddItemScreenProps> = ({ navigation }) => {
     setIsSaving(true);
 
     try {
-      await createItem({
+      // Create item using API (will also save locally and queue for sync)
+      const itemData = {
         name: itemName.trim(),
         price: parseFloat(price),
         category_ids: [categoryId],
-        image_path: imagePath || undefined,
-        image_url: imageUrl || undefined,
-      });
+        stock_quantity: 0, // Default stock quantity
+      };
+
+      // Use local storage (which will queue for API sync)
+      await createItem(itemData);
 
       Alert.alert(
         'Success',
-        'Item added successfully!',
+        'Item added successfully! It will be synced to the server.',
         [
           {
             text: 'OK',
@@ -318,19 +321,24 @@ const AddItemScreen: React.FC<AddItemScreenProps> = ({ navigation }) => {
             </TouchableOpacity>
             {showCategoryDropdown && (
               <View style={styles.dropdownMenu}>
-                {categories.map((cat) => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      setCategory(cat.name);
-                      setCategoryId(cat.id);
-                      setShowCategoryDropdown(false);
-                    }}
-                  >
-                    <Text style={styles.dropdownItemText}>{cat.name}</Text>
-                  </TouchableOpacity>
-                ))}
+                <ScrollView 
+                  style={styles.dropdownScrollView}
+                  nestedScrollEnabled={true}
+                >
+                  {categories.map((cat) => (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setCategory(cat.name);
+                        setCategoryId(cat.id);
+                        setShowCategoryDropdown(false);
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText}>{cat.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
             )}
           </View>
@@ -601,6 +609,11 @@ const styles = StyleSheet.create({
     color: '#999999',
   },
   dropdownMenu: {
+    position: 'absolute',
+    top: 80,
+    left: 0,
+    right: 0,
+    maxHeight: 200,
     backgroundColor: '#FFFFFF',
     borderWidth: 0.6,
     borderColor: '#E0E0E0',
@@ -610,7 +623,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  dropdownScrollView: {
+    maxHeight: 200,
   },
   dropdownItem: {
     paddingHorizontal: 16,

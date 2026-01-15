@@ -1,3 +1,12 @@
+/**
+ * AdminPinScreen.tsx
+ * 
+ * This screen handles LOCAL admin PIN verification for accessing admin features.
+ * This is NOT related to API authentication - it's a local security layer.
+ * 
+ * The admin PIN is stored locally in business settings and verified client-side.
+ * This is separate from the vendor account login which uses the API.
+ */
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,

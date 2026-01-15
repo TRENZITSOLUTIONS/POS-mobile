@@ -69,7 +69,7 @@ export const API = {
       business_name: string;
       phone: string;
       address: string;
-      gst_number?: string;
+      gst_no: string; // REQUIRED per API documentation
     }): Promise<any> => {
       const response = await apiClient.post('/auth/register', data);
       return response.data;
@@ -77,6 +77,24 @@ export const API = {
 
     logout: async (): Promise<any> => {
       const response = await apiClient.post('/auth/logout');
+      return response.data;
+    },
+
+    forgotPassword: async (data: {
+      username: string;
+      gst_no: string;
+    }): Promise<any> => {
+      const response = await apiClient.post('/auth/forgot-password', data);
+      return response.data;
+    },
+
+    resetPassword: async (data: {
+      username: string;
+      gst_no: string;
+      new_password: string;
+      new_password_confirm: string;
+    }): Promise<any> => {
+      const response = await apiClient.post('/auth/reset-password', data);
       return response.data;
     },
   },

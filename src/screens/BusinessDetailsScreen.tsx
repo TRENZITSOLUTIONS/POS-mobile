@@ -17,6 +17,7 @@ import {
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/business.types';
 import { getBusinessSettings, saveBusinessSettings } from '../services/storage';
+import { getUserData } from '../services/auth';
 
 type BusinessDetailsScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'BusinessDetails'>;
@@ -67,13 +68,17 @@ const BusinessDetailsScreen: React.FC<BusinessDetailsScreenProps> = ({ navigatio
 
   const loadBusinessData = async () => {
     try {
+      // First try to get from local business settings
       const settings = await getBusinessSettings();
       
+      // Then get vendor data from auth (login response)
+      const userData = await getUserData();
+      
       setBusinessData({
-        shopName: settings.business_name || '',
-        address: settings.business_address || '',
-        phoneNumber: settings.business_phone || '',
-        emailId: settings.business_email || '',
+        shopName: settings?.business_name || userData?.business_name || '',
+        address: settings?.business_address || '',
+        phoneNumber: settings?.business_phone || '',
+        emailId: settings?.business_email || '',
       });
     } catch (error) {
       console.error('Failed to load business data:', error);

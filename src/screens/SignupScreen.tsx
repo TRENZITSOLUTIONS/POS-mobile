@@ -89,6 +89,18 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ navigation }) => {
       return false;
     }
 
+    if (!gstNumber.trim()) {
+      Alert.alert('Error', 'Please enter GST number');
+      return false;
+    }
+
+    // GST format validation (basic check)
+    const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}[Z]{1}[0-9A-Z]{1}$/;
+    if (!gstRegex.test(gstNumber.trim())) {
+      Alert.alert('Error', 'Please enter a valid GST number (e.g., 29ABCDE1234F1Z5)');
+      return false;
+    }
+
     if (!password) {
       Alert.alert('Error', 'Please enter password');
       return false;
@@ -123,13 +135,13 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ navigation }) => {
         business_name: businessName.trim(),
         phone: phone.trim(),
         address: address.trim(),
-        gst_number: gstNumber.trim() || undefined,
+        gst_no: gstNumber.trim(), // REQUIRED field
       });
 
       if (result.success) {
         Alert.alert(
-          'Success',
-          result.message || 'Registration successful. Your account is pending approval. Please wait for admin approval.',
+          '✅ Registration Successful',
+          result.message || 'Your vendor account has been created and is awaiting approval.\n\nYou will be able to login once a sales representative or admin approves your account.\n\nThank you for your patience!',
           [
             {
               text: 'OK',
@@ -138,7 +150,8 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ navigation }) => {
                 navigation.replace('Login');
               },
             },
-          ]
+          ],
+          { cancelable: false }
         );
       } else {
         Alert.alert('Signup Failed', result.error || 'Please try again');
@@ -242,15 +255,17 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ navigation }) => {
 
             {/* GST Number */}
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>GST Number (Optional)</Text>
+              <Text style={styles.label}>GST Number *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Enter GST number"
+                placeholder="Enter GST number (e.g., 29ABCDE1234F1Z5)"
                 placeholderTextColor="#999999"
                 value={gstNumber}
                 onChangeText={setGstNumber}
                 autoCapitalize="characters"
+                editable={!isLoading}
               />
+              <Text style={styles.helperText}>Required for password recovery</Text>
             </View>
 
             {/* Address */}
@@ -457,6 +472,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#C62828',
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#666666',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
 });
 

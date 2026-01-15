@@ -1,3 +1,12 @@
+/**
+ * SetAdminPinScreen.tsx
+ * 
+ * This screen handles setting up a LOCAL admin PIN for admin feature access.
+ * This is NOT related to API authentication - it's a local security layer.
+ * 
+ * The admin PIN is stored locally (hashed) in business settings.
+ * This is separate from the vendor account password used for API login.
+ */
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,

@@ -100,15 +100,22 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
 
   const handleForgotPassword = () => {
     Alert.alert(
-      'Forgot Password',
-      'Please contact your administrator to reset your password.\n\nEmail: support@yourcompany.com\nPhone: +1234567890',
-      [{ text: 'OK' }]
+      'Reset Password',
+      'Password reset requires your GST number for verification.\n\nIf your vendor account does not have a GST number on file, please contact support.\n\nEmail: support@yourcompany.com\nPhone: +1234567890',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Contact Support',
+          onPress: () => {
+            // TODO: Open email client or dialer
+            console.log('Contact support');
+          },
+        },
+      ]
     );
-    // TODO: Implement forgot password flow with API
-    // This would typically:
-    // 1. Ask for email
-    // 2. Send reset link via email
-    // 3. Allow user to reset password
+    // TODO: Implement full password reset flow
+    // Flow: POST /auth/forgot-password (username + gst_no)
+    // Then: POST /auth/reset-password (username + gst_no + new_password)
   };
 
   const handleSignupNavigation = () => {
